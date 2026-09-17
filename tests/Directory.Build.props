@@ -1,0 +1,17 @@
+<Project>
+
+  <!-- Inherit everything from the root, then relax what only suits shipping code. -->
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+
+    <!--
+      CA1707 forbids underscores in member names. It is aimed at public API
+      surface; in tests, `Adds_and_subtracts_exactly` is the readable
+      convention and the name is the failure message you read in CI.
+    -->
+    <NoWarn>$(NoWarn);CA1707</NoWarn>
+  </PropertyGroup>
+
+</Project>

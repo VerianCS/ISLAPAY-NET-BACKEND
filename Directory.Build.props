@@ -1,0 +1,29 @@
+<Project>
+
+  <!--
+    Settings every project in the solution inherits.
+
+    Warnings are errors on purpose: this is a payments backend, and the
+    compiler's nullability and overflow warnings are exactly the class of
+    defect that is cheapest to fix now and most expensive to find in a ledger.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+
+    <!--
+      Arithmetic that overflows throws instead of silently wrapping. A wrapped
+      balance is a catastrophic, silent corruption; an exception is a page.
+    -->
+    <CheckForOverflowUnderflow>true</CheckForOverflowUnderflow>
+
+    <Company>IslaPay</Company>
+    <Product>IslaPay</Product>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/IslaPay.Platform.Money/IslaPay.Platform.Money.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/IslaPay.Platform.Money.Tests/IslaPay.Platform.Money.Tests.csproj" />
+  </Folder>
+</Solution>
