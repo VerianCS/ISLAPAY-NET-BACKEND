@@ -1,0 +1,47 @@
+# Local dependencies for running the API and its integration tests.
+#
+# Development only. Both services here are configured for convenience, not for
+# production: Keycloak runs in dev mode with an in-memory database, and both
+# use the default credentials. Nothing in this file should be copied into a
+# deployment.
+#
+#   docker compose up -d
+#   dotnet run --project src/IslaPay.Api
+#
+# The integration tests read KEYCLOAK_URL and RABBITMQ_HOST, which default to
+# localhost — so with this running, they run rather than skip.
+
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.7
+    # The image has no default command; without one it exits immediately.
+    command: start-dev --http-port 8080
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      # Dev mode keeps the realm in memory: every restart is a clean slate.
+      # That is what you want while the realm is still being designed, and it
+      # is why the test fixture builds its realm through the Admin API rather
+      # than assuming one is there.
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000 && echo -e 'GET /health/ready HTTP/1.1\\nHost: localhost\\n\\n' >&3 && cat <&3 | grep -q '\"status\": \"UP\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    ports:
+      - "5672:5672"
+      # The management UI, on http://localhost:15672 (guest/guest). Worth
+      # having locally: seeing a queue's depth is how you find out a consumer
+      # is not consuming.
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10

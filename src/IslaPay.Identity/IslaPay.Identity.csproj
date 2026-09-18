@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <!--
+      NewCode is internal because nothing outside this assembly should be
+      generating one, and the test that proves it is unbiased has to reach it.
+    -->
+    <InternalsVisibleTo Include="IslaPay.Identity.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\IslaPay.Contracts\IslaPay.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Abstractions only. This assembly must not pull in a logging
+      implementation: the host decides where logs go, and a library that
+      chooses for it is a library you cannot reuse.
+    -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
+  </ItemGroup>
+
+</Project>

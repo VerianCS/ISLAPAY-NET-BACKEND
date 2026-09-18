@@ -1,12 +1,15 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/IslaPay.Api/IslaPay.Api.csproj" />
     <Project Path="src/IslaPay.Contracts/IslaPay.Contracts.csproj" />
+    <Project Path="src/IslaPay.Identity/IslaPay.Identity.csproj" />
     <Project Path="src/IslaPay.Ledger.Domain/IslaPay.Ledger.Domain.csproj" />
     <Project Path="src/IslaPay.Platform.Messaging/IslaPay.Platform.Messaging.csproj" />
     <Project Path="src/IslaPay.Platform.Money/IslaPay.Platform.Money.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/IslaPay.Contracts.Tests/IslaPay.Contracts.Tests.csproj" />
+    <Project Path="tests/IslaPay.Identity.Tests/IslaPay.Identity.Tests.csproj" />
     <Project Path="tests/IslaPay.Ledger.Domain.Tests/IslaPay.Ledger.Domain.Tests.csproj" />
     <Project Path="tests/IslaPay.Platform.Messaging.Tests/IslaPay.Platform.Messaging.Tests.csproj" />
     <Project Path="tests/IslaPay.Platform.Money.Tests/IslaPay.Platform.Money.Tests.csproj" />

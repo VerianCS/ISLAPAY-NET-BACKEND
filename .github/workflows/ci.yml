@@ -45,9 +45,36 @@ jobs:
 
     env:
       RABBITMQ_HOST: localhost
+      KEYCLOAK_URL: http://localhost:8080
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
 
     steps:
       - uses: actions/checkout@v4
+
+      # Keycloak cannot be a service container: the image needs a command
+      # (`start-dev`), and the `services:` syntax has nowhere to put one. So it
+      # is started here, and the job waits for it rather than racing it.
+      - name: Start Keycloak
+        run: |
+          docker run -d --name keycloak \
+            -p 8080:8080 \
+            -e KC_BOOTSTRAP_ADMIN_USERNAME=admin \
+            -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin \
+            quay.io/keycloak/keycloak:26.7 start-dev --http-port 8080
+
+      - name: Wait for Keycloak
+        run: |
+          for i in $(seq 1 90); do
+            if curl -sf http://localhost:8080/realms/master/.well-known/openid-configuration > /dev/null; then
+              echo "Keycloak is up after ${i}s."
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Keycloak never came up."
+          docker logs keycloak
+          exit 1
 
       # No version here: global.json pins it, so CI and a developer's machine
       # cannot drift onto different SDKs without that being a visible change.
@@ -69,14 +96,44 @@ jobs:
       - name: Build
         run: dotnet build --no-restore --configuration Release
 
+      # No LogFileName: every project would write to that one name and
+      # overwrite the previous project's results, leaving an artifact that
+      # reports one assembly and a skip guard that can only see one assembly.
+      # The default name is unique per run.
       - name: Test
         run: >
           dotnet test
           --no-build
           --configuration Release
-          --logger "trx;LogFileName=results.trx"
+          --logger trx
           --logger "console;verbosity=normal"
           --results-directory artifacts/test-results
+
+      # The integration suites skip themselves when their dependency is not
+      # reachable, which is right on a developer's machine and wrong here: a
+      # broker or a Keycloak that failed to start would leave the job green
+      # with the tests that matter never having run. So CI refuses a skip.
+      - name: Refuse a silent skip
+        if: always()
+        run: |
+          shopt -s nullglob
+          files=(artifacts/test-results/*.trx)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No test results were produced."
+            exit 1
+          fi
+          # total minus executed, not the trx's own notExecuted: a test the
+          # runner skipped leaves notExecuted at zero and only shows up as the
+          # gap between those two. Verified against a run with a deliberately
+          # absent broker, which is the only way to know a guard like this works.
+          skipped=$(grep -ho '<Counters total="[0-9]*" executed="[0-9]*"' "${files[@]}" \
+            | sed -E 's/.*total="([0-9]+)" executed="([0-9]+)".*/\1 \2/' \
+            | awk '{ t += $1; e += $2 } END { printf "%d", t - e }')
+          echo "Skipped tests: $skipped"
+          if [ "$skipped" -ne 0 ]; then
+            echo "A test was skipped. In CI every dependency is present, so a skip is a failure."
+            exit 1
+          fi
 
       - name: Upload test results
         # Results matter most precisely when the run failed.
