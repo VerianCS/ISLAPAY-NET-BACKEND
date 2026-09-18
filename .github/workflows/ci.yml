@@ -64,13 +64,26 @@ jobs:
             quay.io/keycloak/keycloak:26.7 start-dev --http-port 8080
 
       - name: Wait for Keycloak
+        # Bounded twice over. The loop counts attempts, but an attempt that
+        # hangs makes the count meaningless — curl's own default connect
+        # timeout is minutes, so a socket that is accepted and then never
+        # answered stalls the job rather than failing it. --max-time bounds
+        # each attempt and this bounds the whole step.
+        timeout-minutes: 3
         run: |
-          for i in $(seq 1 90); do
-            if curl -sf http://localhost:8080/realms/master/.well-known/openid-configuration > /dev/null; then
-              echo "Keycloak is up after ${i}s."
+          for i in $(seq 1 60); do
+            if curl -sf --max-time 3 \
+              http://127.0.0.1:8080/realms/master/.well-known/openid-configuration > /dev/null; then
+              echo "Keycloak answered on attempt $i."
               exit 0
             fi
-            sleep 1
+            if ! docker ps --filter name=keycloak --filter status=running -q | grep -q .; then
+              echo "The Keycloak container is no longer running."
+              docker logs keycloak
+              exit 1
+            fi
+            echo "attempt $i: not yet"
+            sleep 2
           done
           echo "Keycloak never came up."
           docker logs keycloak
