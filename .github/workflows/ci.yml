@@ -27,6 +27,25 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
+    # A real broker, because the messaging tests are integration tests on
+    # purpose: what is worth checking is that RabbitMQ accepts the topology we
+    # declare and routes what we publish, and a mock can only confirm we called
+    # our own code. Without this the tests would skip — quietly, which is worse
+    # than failing.
+    services:
+      rabbitmq:
+        image: rabbitmq:3.13-alpine
+        ports:
+          - 5672:5672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      RABBITMQ_HOST: localhost
+
     steps:
       - uses: actions/checkout@v4
 
