@@ -7,6 +7,7 @@ using IslaPay.Identity.Contracts;
 using IslaPay.Platform.Api;
 using IslaPay.Platform.AspNet;
 using IslaPay.Platform.Serialization;
+using IslaPay.TestSupport;
 
 namespace IslaPay.Identity.Tests;
 
@@ -27,19 +28,19 @@ namespace IslaPay.Identity.Tests;
 /// against — which is why the CI job asserts on the count.
 /// </para>
 /// </remarks>
-[Collection(KeycloakRealmDefinition.Name)]
+[Collection(IdentityHostDefinition.Name)]
 [Trait("Category", "Integration")]
 public sealed class IdentityFlowTests : IDisposable
 {
     private const string Password = "Correct-Horse-9";
 
-    private readonly KeycloakFixture _keycloak;
+    private readonly IdentityHostFixture _host;
     private readonly IslaPayApiFactory? _factory;
 
-    public IdentityFlowTests(KeycloakFixture keycloak)
+    public IdentityFlowTests(IdentityHostFixture host)
     {
-        _keycloak = keycloak;
-        _factory = keycloak.Available ? new IslaPayApiFactory(keycloak.Options) : null;
+        _host = host;
+        _factory = host.Available ? new IslaPayApiFactory(host.HostSettings) : null;
     }
 
     public void Dispose() => _factory?.Dispose();
@@ -329,7 +330,7 @@ public sealed class IdentityFlowTests : IDisposable
 
         // Signed by this realm, unexpired, for this very user — and not for
         // this API. Accepting it would mean any client in the realm is a way in.
-        var stranger = await _keycloak.StrangerTokenAsync(account.Email, account.Password);
+        var stranger = await _host.Keycloak.StrangerTokenAsync(account.Email, account.Password);
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", stranger);
         var response = await client.PostAsJsonAsync("/v1/auth/otp/resend", new { }, Json);
@@ -461,7 +462,7 @@ public sealed class IdentityFlowTests : IDisposable
 
     private (HttpClient Client, RecordingOtpSender Codes) Ready()
     {
-        Skip.IfNot(_keycloak.Available, "No Keycloak reachable.");
+        Skip.IfNot(_host.Available, "No Keycloak or no Postgres reachable.");
         return (_factory!.CreateClient(), _factory.Codes);
     }
 

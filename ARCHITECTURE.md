@@ -18,7 +18,8 @@ src/Platform/          technical, knows no business
   IslaPay.Platform.Money            money as integer minor units
   IslaPay.Platform.Serialization    the wire format, and only that
   IslaPay.Platform.Api              ApiProblem, CursorPage, platform error codes
-  IslaPay.Platform.Messaging        RabbitMQ transport (no contracts, by rule)
+  IslaPay.Platform.Data             Npgsql, transactions, SQL migrations
+  IslaPay.Platform.Messaging        RabbitMQ transport + outbox (no contracts, by rule)
   IslaPay.Platform.AspNet           module contract, shared pipeline, health
 
 src/Modules/<Context>/
@@ -53,17 +54,49 @@ to `IslaPay.Host`. The module brings its own configuration section, services,
 routes and readiness check; the host learns nothing about it beyond the type
 name.
 
+## Data
+
+One Postgres cluster, one schema per context: `identity`, `ledger`, `wallet`,
+plus `platform` for the migration history and `messaging` for the outbox.
+Nothing reads across a schema boundary, which is what makes "one database per
+service" a connection string change later rather than a rewrite.
+
+Migrations are plain `.sql` files embedded in the module that owns the schema,
+applied in name order and recorded with a checksum — editing an applied script
+is refused, because it leaves every existing environment on the old definition
+and every new one on the new.
+
+No ORM. A ledger's correctness lives in the isolation level and in which rows
+are locked, in what order, and those have to be visible in the code that
+depends on them.
+
+## Events
+
+Modules integrate by event, not by calling each other. A producer writes to
+`messaging.outbox` — in the same transaction as the data that caused the event,
+when it has one — and a poller publishes to RabbitMQ afterwards. That avoids
+the dual write, and it makes delivery **at least once**: every consumer here is
+idempotent, and that is a requirement rather than a nicety.
+
+The one synchronous cross-module call is Wallet reading the ledger through
+`ILedger`. It goes through Ledger's `.Contracts` and mentions no domain type,
+so it is the same surface a network API would have.
+
 ## Current state
 
-Identity is the only module with behaviour. Ledger is domain rules with no
-host, no database and no bus — its invariants are worth stating independently
-of where entries are stored, and its property tests need to run thousands of
-sequences per second. Wallet, Exchange and P2P are contracts only: the shapes
-are agreed in `API_CONTRACT.md`, nothing serves them yet.
+Working end to end: registering a user creates the account in Keycloak, writes
+`user.registered.v1` to the outbox, publishes it, and Wallet opens the ledger
+accounts. `GET /v1/me/wallet` then returns balances, rates and history.
 
-Nothing publishes an event. `Platform.Messaging` can declare the §7 topology
-and publish with confirms, and has integration tests against a real broker, but
-no module calls it. The first real event — Identity publishing
-`user.registered.v1` for Wallet to consume — is what will exercise outbox,
-publication, quorum queue, consumer and idempotency end to end. Until then the
-transport is a well-tested guess.
+Because Keycloak owns the account and this database cannot join the transaction
+that created it, that event can be lost. Wallet therefore also opens accounts
+on first read: the event is the fast path, the read is the guarantee. Both are
+tested, the second with the broker deliberately unreachable.
+
+Exchange and P2P are contracts only — the shapes are agreed in
+`API_CONTRACT.md`, nothing serves them yet. The rates in the wallet response
+are parity placeholders until Exchange exists, and say so in the code.
+
+No money moves yet: there is no transfer, conversion or payment endpoint. The
+ledger can post — with idempotency, row locks and an append-only history
+enforced by the database — but nothing calls it except its own tests.

@@ -38,12 +38,12 @@ public sealed class RecordingOtpSender : IOtpSender
         _sent.ContainsKey((purpose, destination));
 }
 
-/// <summary>The real host, pointed at the fixture's realm.</summary>
+/// <summary>The real host, pointed at the fixture's realm and database.</summary>
 public sealed class IslaPayApiFactory : WebApplicationFactory<Program>
 {
-    private readonly KeycloakOptions _keycloak;
+    private readonly IReadOnlyDictionary<string, string> _settings;
 
-    public IslaPayApiFactory(KeycloakOptions keycloak) => _keycloak = keycloak;
+    public IslaPayApiFactory(IReadOnlyDictionary<string, string> settings) => _settings = settings;
 
     public RecordingOtpSender Codes { get; } = new();
 
@@ -62,12 +62,8 @@ public sealed class IslaPayApiFactory : WebApplicationFactory<Program>
         // appsettings.json said — so sign-in would work and every token would
         // then be rejected. That failure looked like a Keycloak problem for
         // twenty minutes; this comment is cheaper than the second twenty.
-        builder.UseSetting("Keycloak:Authority", _keycloak.Authority);
-        builder.UseSetting("Keycloak:Realm", _keycloak.Realm);
-        builder.UseSetting("Keycloak:ClientId", _keycloak.ClientId);
-        builder.UseSetting("Keycloak:AdminClientId", _keycloak.AdminClientId);
-        builder.UseSetting("Keycloak:AdminClientSecret", _keycloak.AdminClientSecret);
-        builder.UseSetting("Keycloak:Audience", _keycloak.Audience);
+        foreach (var (key, value) in _settings)
+            builder.UseSetting(key, value);
 
         // Codes expire in seconds here so the expiry path is a test and not a
         // five-minute wait, and the resend cooldown is off so a test can ask

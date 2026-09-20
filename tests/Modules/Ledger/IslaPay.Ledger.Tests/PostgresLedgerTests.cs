@@ -1,5 +1,6 @@
 using IslaPay.Ledger.Domain;
 using IslaPay.Platform;
+using IslaPay.TestSupport;
 using Npgsql;
 
 namespace IslaPay.Ledger.Tests;
@@ -13,13 +14,13 @@ namespace IslaPay.Ledger.Tests;
 /// question, and the one that decides whether the numbers survive a restart,
 /// a concurrent request, or somebody with a psql prompt.
 /// </remarks>
-[Collection(PostgresCollectionDefinition.Name)]
+[Collection(LedgerSchemaDefinition.Name)]
 [Trait("Category", "Integration")]
 public class PostgresLedgerTests
 {
-    private readonly PostgresFixture _postgres;
+    private readonly LedgerSchemaFixture _postgres;
 
-    public PostgresLedgerTests(PostgresFixture postgres) => _postgres = postgres;
+    public PostgresLedgerTests(LedgerSchemaFixture postgres) => _postgres = postgres;
 
     private PostgresLedger Ledger()
     {

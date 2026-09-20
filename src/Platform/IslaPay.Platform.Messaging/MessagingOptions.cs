@@ -31,6 +31,20 @@ public sealed class MessagingOptions
     /// fire-and-forget and a "sent" message may never have existed.
     /// </summary>
     public TimeSpan ConfirmTimeout { get; init; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    /// Appended to every consumer name, and therefore to every queue.
+    /// </summary>
+    /// <remarks>
+    /// Empty in a deployment that owns its broker. It exists because a queue
+    /// name is the identity of a consumer group: two deployments sharing a
+    /// broker and a queue name do not both get the events, they take turns,
+    /// and each one silently misses roughly half. That is a staging
+    /// environment quietly eating production's messages, and it is also two
+    /// test runs eating each other's — which is how this option came to be
+    /// written.
+    /// </remarks>
+    public string ConsumerSuffix { get; init; } = string.Empty;
 }
 
 /// <summary>

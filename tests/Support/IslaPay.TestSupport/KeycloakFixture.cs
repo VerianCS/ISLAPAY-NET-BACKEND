@@ -2,9 +2,8 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
-using IslaPay.Identity;
 
-namespace IslaPay.Identity.Tests;
+namespace IslaPay.TestSupport;
 
 /// <summary>
 /// Builds a realm in a live Keycloak and tears it down afterwards.
@@ -37,17 +36,39 @@ public sealed class KeycloakFixture : IAsyncLifetime, IDisposable
 
     public bool Available { get; private set; }
 
+    /// <summary>
+    /// The user attributes the Identity module stores, declared here because
+    /// the realm's user profile has to know about them before anything can
+    /// write one. Kept in step with <c>KeycloakUser</c> by the tests that
+    /// exercise both.
+    /// </summary>
+    public const string PhoneAttribute = "phoneNumber";
+    public const string PhoneVerifiedAttribute = "phoneNumberVerified";
+
     /// <summary>Another client in the realm, used to prove the audience check bites.</summary>
     public const string StrangerClientId = "some-other-app";
 
-    public KeycloakOptions Options => new()
+    public const string AppClientId = "islapay-app";
+    public const string AdminClientId = "islapay-admin";
+    public const string Audience = "islapay-api";
+
+    /// <summary>
+    /// The configuration a host needs to talk to this realm.
+    /// </summary>
+    /// <remarks>
+    /// Plain settings rather than the Identity module's options type: this
+    /// project is shared test infrastructure and must not depend on a module,
+    /// or every other module's tests inherit Identity through the back door.
+    /// </remarks>
+    public IReadOnlyDictionary<string, string> HostSettings => new Dictionary<string, string>(
+        StringComparer.Ordinal)
     {
-        Authority = Authority,
-        Realm = Realm,
-        ClientId = "islapay-app",
-        AdminClientId = "islapay-admin",
-        AdminClientSecret = AdminClientSecret,
-        Audience = "islapay-api",
+        ["Keycloak:Authority"] = Authority,
+        ["Keycloak:Realm"] = Realm,
+        ["Keycloak:ClientId"] = AppClientId,
+        ["Keycloak:AdminClientId"] = AdminClientId,
+        ["Keycloak:AdminClientSecret"] = AdminClientSecret,
+        ["Keycloak:Audience"] = Audience,
     };
 
     public async Task InitializeAsync()
@@ -165,14 +186,14 @@ public sealed class KeycloakFixture : IAsyncLifetime, IDisposable
                 [
                     new
                     {
-                        name = KeycloakUser.PhoneAttribute,
+                        name = PhoneAttribute,
                         displayName = "Phone",
                         multivalued = false,
                         adminOnly.permissions,
                     },
                     new
                     {
-                        name = KeycloakUser.PhoneVerifiedAttribute,
+                        name = PhoneVerifiedAttribute,
                         displayName = "Phone verified",
                         multivalued = false,
                         adminOnly.permissions,

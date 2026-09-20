@@ -1,7 +1,7 @@
 using IslaPay.Platform.Data;
 using Npgsql;
 
-namespace IslaPay.Ledger.Tests;
+namespace IslaPay.TestSupport;
 
 /// <summary>
 /// A throwaway database, built by the real migrations.
@@ -19,7 +19,7 @@ namespace IslaPay.Ledger.Tests;
 /// fixture tests a schema nobody deploys.
 /// </para>
 /// </remarks>
-public sealed class PostgresFixture : IAsyncLifetime
+public class PostgresFixture : IAsyncLifetime
 {
     private static string AdminConnectionString =>
         Environment.GetEnvironmentVariable("POSTGRES_URL")
@@ -57,14 +57,12 @@ public sealed class PostgresFixture : IAsyncLifetime
         }
 
         Database = new Database(Options);
-
-        await Migrator.ApplyAsync(Database,
-        [
-            new MigrationSet("ledger", typeof(LedgerModule).Assembly, "IslaPay.Ledger.Migrations."),
-        ]);
-
+        await AfterCreateAsync();
         Available = true;
     }
+
+    /// <summary>Applies whatever schema the user of this fixture needs.</summary>
+    protected virtual Task AfterCreateAsync() => Task.CompletedTask;
 
     public async Task DisposeAsync()
     {
@@ -92,10 +90,4 @@ public sealed class PostgresFixture : IAsyncLifetime
 
     private static string Rewrite(string connectionString, string database) =>
         new NpgsqlConnectionStringBuilder(connectionString) { Database = database }.ToString();
-}
-
-[CollectionDefinition(Name)]
-public sealed class PostgresCollectionDefinition : ICollectionFixture<PostgresFixture>
-{
-    public const string Name = "postgres";
 }

@@ -36,7 +36,11 @@ public sealed record WalletResponse(
 public sealed record AccountDto(
     string Currency,
     Money Balance,
-    string CardLast4);
+    // Null until the account has a card, and omitted from the response when it
+    // is. An account is opened the moment someone registers and a card comes
+    // later, so the alternative was an empty string or four invented digits —
+    // both of which the client would have to know to disbelieve.
+    string? CardLast4);
 
 /// <summary>One line of wallet history.</summary>
 /// <param name="Id">Stable identifier, usable as a pagination cursor anchor.</param>

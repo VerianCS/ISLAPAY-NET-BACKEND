@@ -22,6 +22,7 @@
     -->
     <ProjectReference Include="..\..\..\..\src\IslaPay.Host\IslaPay.Host.csproj" />
     <ProjectReference Include="..\..\..\..\src\Modules\Identity\IslaPay.Identity\IslaPay.Identity.csproj" />
+    <ProjectReference Include="..\..\..\Support\IslaPay.TestSupport\IslaPay.TestSupport.csproj" />
   </ItemGroup>
 
 </Project>

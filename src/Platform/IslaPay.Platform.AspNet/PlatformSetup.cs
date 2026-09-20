@@ -1,6 +1,7 @@
 using System.Text.Json;
 using IslaPay.Platform.Api;
 using IslaPay.Platform.Data;
+using IslaPay.Platform.Messaging;
 using IslaPay.Platform.Serialization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Builder;
@@ -70,6 +71,25 @@ public static class PlatformSetup
         builder.Services.AddSingleton(data);
         builder.Services.AddSingleton<IDatabase, Database>();
         builder.Services.AddSingleton<IReadinessCheck, DatabaseReadiness>();
+
+        // Messaging. Registered for every host because the outbox is how any
+        // module publishes anything; a host with no producers and no
+        // subscriptions simply drains an empty table.
+        var messaging = builder.Configuration.GetSection("Messaging").Get<MessagingOptions>()
+            ?? new MessagingOptions();
+        var outbox = builder.Configuration.GetSection("Outbox").Get<OutboxOptions>()
+            ?? new OutboxOptions();
+
+        builder.Services.AddSingleton(messaging);
+        builder.Services.AddSingleton(outbox);
+        builder.Services.AddSingleton(new MigrationSet(
+            "messaging", typeof(Outbox).Assembly, "IslaPay.Platform.Messaging.Migrations."));
+        builder.Services.AddSingleton<RabbitMqBus>();
+        builder.Services.AddSingleton<IEventPublisher>(sp => sp.GetRequiredService<RabbitMqBus>());
+        builder.Services.AddSingleton<IOutbox, Outbox>();
+        builder.Services.AddSingleton<OutboxPublisher>();
+        builder.Services.AddHostedService(sp => sp.GetRequiredService<OutboxPublisher>());
+        builder.Services.AddHostedService<RabbitMqSubscriber>();
 
         // The wire format comes from the platform, so a response from this
         // host and a response asserted in a module's contract test cannot be

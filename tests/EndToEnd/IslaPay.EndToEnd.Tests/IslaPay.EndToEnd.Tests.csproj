@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+    <PackageReference Include="Xunit.SkippableFact" Version="1.5.85" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      The host, which is the only thing that knows every module. These tests
+      check the journey between contexts, so they are the one place that
+      legitimately spans them — and they live outside src/Modules so the rule
+      that a module's tests stay inside it is not bent to allow it.
+    -->
+    <ProjectReference Include="..\..\..\src\IslaPay.Host\IslaPay.Host.csproj" />
+    <ProjectReference Include="..\..\Support\IslaPay.TestSupport\IslaPay.TestSupport.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\IslaPay.Wallet.Contracts\IslaPay.Wallet.Contracts.csproj" />
+    <!--
+      Two other modules, both through their .Contracts and nothing else: the
+      ledger's interface, and Identity's published event. Neither module's
+      internals are reachable from here, which the architecture tests enforce.
+    -->
+    <ProjectReference Include="..\..\Ledger\IslaPay.Ledger.Contracts\IslaPay.Ledger.Contracts.csproj" />
+    <ProjectReference Include="..\..\Identity\IslaPay.Identity.Contracts\IslaPay.Identity.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\Platform\IslaPay.Platform.AspNet\IslaPay.Platform.AspNet.csproj" />
+    <ProjectReference Include="..\..\..\Platform\IslaPay.Platform.Messaging\IslaPay.Platform.Messaging.csproj" />
+  </ItemGroup>
+
+</Project>

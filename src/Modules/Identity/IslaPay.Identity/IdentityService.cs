@@ -2,6 +2,7 @@ using System.Buffers.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using IslaPay.Identity.Contracts;
+using IslaPay.Platform.Messaging;
 
 namespace IslaPay.Identity;
 
@@ -28,15 +29,18 @@ public sealed partial class IdentityService
     private readonly ITokenClient _tokens;
     private readonly IAdminClient _admin;
     private readonly OtpService _otp;
+    private readonly IOutbox _outbox;
 
-    public IdentityService(ITokenClient tokens, IAdminClient admin, OtpService otp)
+    public IdentityService(ITokenClient tokens, IAdminClient admin, OtpService otp, IOutbox outbox)
     {
         ArgumentNullException.ThrowIfNull(tokens);
         ArgumentNullException.ThrowIfNull(admin);
         ArgumentNullException.ThrowIfNull(otp);
+        ArgumentNullException.ThrowIfNull(outbox);
         _tokens = tokens;
         _admin = admin;
         _otp = otp;
+        _outbox = outbox;
     }
 
     public async Task<AuthSessionResponse> LoginAsync(
@@ -86,6 +90,21 @@ public sealed partial class IdentityService
         var userId = await _admin
             .CreateUserAsync(email, request.Name.Trim(), phone, request.Password, ct)
             .ConfigureAwait(false);
+
+        // Announced through the outbox, in a transaction of its own.
+        //
+        // The weaker of the two guarantees the outbox offers, and the reason is
+        // Keycloak: the account lives there, so there is no local transaction
+        // for this write to join. If the process dies between the two, the user
+        // exists and no event is emitted. Wallet closes that gap by opening
+        // accounts on first read as well as on this event — the event is the
+        // fast path, not the guarantee.
+        await _outbox.EnqueueAsync(
+            IdentityEvents.Context,
+            IdentityEvents.UserRegistered,
+            new UserRegistered(userId, email, phone, DateTimeOffset.UtcNow),
+            correlationId: userId,
+            cancellationToken: ct).ConfigureAwait(false);
 
         // Best effort. The account exists and the user can sign in; a failed
         // SMS is recoverable with a resend, and unwinding the account here

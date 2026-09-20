@@ -1,16 +1,24 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <!-- The outbox's schema travels with the code that reads it. -->
+    <EmbeddedResource Include="Migrations\**\*.sql" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!--
-      Serialization, not contracts. This is a transport: it must be able to
-      publish any module's event without knowing what any module's events are.
-      It previously referenced the shared contracts package for one line of
-      JSON configuration, and dragged four bounded contexts' DTOs with it.
+      Serialization and Data, not contracts. This is a transport: it must be
+      able to publish any module's event without knowing what any module's
+      events are. It previously referenced the shared contracts package for one
+      line of JSON configuration, and dragged four bounded contexts with it.
     -->
+    <ProjectReference Include="..\IslaPay.Platform.Data\IslaPay.Platform.Data.csproj" />
     <ProjectReference Include="..\IslaPay.Platform.Serialization\IslaPay.Platform.Serialization.csproj" />
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
     <PackageReference Include="RabbitMQ.Client" Version="7.1.2" />
   </ItemGroup>
 
