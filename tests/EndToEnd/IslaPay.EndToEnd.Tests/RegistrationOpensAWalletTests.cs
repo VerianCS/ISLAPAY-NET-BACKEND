@@ -217,9 +217,24 @@ public class RegistrationOpensAWalletTests
         return JsonSerializer.Deserialize<WalletResponse>(body, Json)!;
     }
 
-    /// <summary>Drains explicitly rather than waiting for the poller's timer.</summary>
-    private static Task<int> DrainOutboxAsync(IslaPayHost host) =>
-        host.Services.GetRequiredService<OutboxPublisher>().DrainOnceAsync();
+    /// <summary>
+    /// Drains explicitly rather than waiting for the poller's timer, once the
+    /// queues exist.
+    /// </summary>
+    /// <remarks>
+    /// Waiting for the topology is not test ceremony. A topic exchange drops
+    /// what it cannot route, so publishing before the consumer's queue is
+    /// bound loses the message silently — which is what made this test fail in
+    /// CI and pass on a faster machine. The background poller waits on the
+    /// same signal for the same reason.
+    /// </remarks>
+    private static async Task<int> DrainOutboxAsync(IslaPayHost host)
+    {
+        await host.Services.GetRequiredService<MessagingTopology>()
+            .Declared.WaitAsync(TimeSpan.FromSeconds(30));
+
+        return await host.Services.GetRequiredService<OutboxPublisher>().DrainOnceAsync();
+    }
 
     private static async Task<long> PendingOutboxRowsAsync(IslaPayHost host)
     {

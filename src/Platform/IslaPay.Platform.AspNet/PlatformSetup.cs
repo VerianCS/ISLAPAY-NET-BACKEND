@@ -87,6 +87,8 @@ public static class PlatformSetup
         builder.Services.AddSingleton<RabbitMqBus>();
         builder.Services.AddSingleton<IEventPublisher>(sp => sp.GetRequiredService<RabbitMqBus>());
         builder.Services.AddSingleton<IOutbox, Outbox>();
+        builder.Services.AddSingleton<MessagingTopology>();
+        builder.Services.AddHostedService(sp => sp.GetRequiredService<MessagingTopology>());
         builder.Services.AddSingleton<OutboxPublisher>();
         builder.Services.AddHostedService(sp => sp.GetRequiredService<OutboxPublisher>());
         builder.Services.AddHostedService<RabbitMqSubscriber>();

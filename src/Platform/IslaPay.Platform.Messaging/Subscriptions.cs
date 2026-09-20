@@ -55,6 +55,7 @@ public sealed partial class RabbitMqSubscriber : BackgroundService
 {
     private readonly IReadOnlyList<Subscription> _subscriptions;
     private readonly MessagingOptions _options;
+    private readonly MessagingTopology _topology;
     private readonly IServiceScopeFactory _scopes;
     private readonly ILogger<RabbitMqSubscriber> _log;
 
@@ -64,16 +65,19 @@ public sealed partial class RabbitMqSubscriber : BackgroundService
     public RabbitMqSubscriber(
         IEnumerable<Subscription> subscriptions,
         MessagingOptions options,
+        MessagingTopology topology,
         IServiceScopeFactory scopes,
         ILogger<RabbitMqSubscriber> log)
     {
         ArgumentNullException.ThrowIfNull(subscriptions);
         ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(topology);
         ArgumentNullException.ThrowIfNull(scopes);
         ArgumentNullException.ThrowIfNull(log);
 
         _subscriptions = [.. subscriptions];
         _options = options;
+        _topology = topology;
         _scopes = scopes;
         _log = log;
     }
@@ -81,6 +85,10 @@ public sealed partial class RabbitMqSubscriber : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (_subscriptions.Count == 0) return;
+
+        // The queues exist before this runs, so a consumer never has to
+        // declare what it is about to read.
+        await _topology.Declared.WaitAsync(stoppingToken).ConfigureAwait(false);
 
         var factory = new ConnectionFactory
         {
@@ -143,32 +151,12 @@ public sealed partial class RabbitMqSubscriber : BackgroundService
             .ConfigureAwait(false);
         _channels.Add(channel);
 
-        // The queue's name is the consumer group's identity. See
-        // MessagingOptions.ConsumerSuffix for why it is allowed to vary.
-        var consumerName = _options.ConsumerSuffix is { Length: > 0 } suffix
-            ? $"{subscription.Consumer}-{suffix}"
-            : subscription.Consumer;
-
-        // Declared by the consumer, not by the producer. A queue nobody has
-        // declared yet drops every message published before the consumer first
-        // started, and "we deployed the consumer an hour later" is not a reason
-        // to lose events.
-        var bus = new RabbitMqBus(_options);
-        await using (bus)
-        {
-            await bus.DeclareExchangeAsync(subscription.Context, cancellationToken)
-                .ConfigureAwait(false);
-            await bus.DeclareQueueAsync(
-                consumerName, subscription.Context, subscription.BindingPattern,
-                cancellationToken).ConfigureAwait(false);
-        }
-
         // One unacked message at a time per consumer. Throughput is not the
         // constraint here and a small window keeps redelivery cheap.
         await channel.BasicQosAsync(0, 1, global: false, cancellationToken)
             .ConfigureAwait(false);
 
-        var queue = Naming.Queue(consumerName, subscription.Context);
+        var queue = _topology.QueueFor(subscription);
         var consumer = new AsyncEventingBasicConsumer(channel);
 
         consumer.ReceivedAsync += async (_, args) =>

@@ -65,6 +65,7 @@ public sealed partial class OutboxPublisher : BackgroundService
     private readonly IDatabase _database;
     private readonly IEventPublisher _publisher;
     private readonly RabbitMqBus _bus;
+    private readonly MessagingTopology _topology;
     private readonly OutboxOptions _options;
     private readonly ILogger<OutboxPublisher> _log;
     private readonly HashSet<string> _declared = new(StringComparer.Ordinal);
@@ -73,18 +74,21 @@ public sealed partial class OutboxPublisher : BackgroundService
         IDatabase database,
         IEventPublisher publisher,
         RabbitMqBus bus,
+        MessagingTopology topology,
         OutboxOptions options,
         ILogger<OutboxPublisher> log)
     {
         ArgumentNullException.ThrowIfNull(database);
         ArgumentNullException.ThrowIfNull(publisher);
         ArgumentNullException.ThrowIfNull(bus);
+        ArgumentNullException.ThrowIfNull(topology);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(log);
 
         _database = database;
         _publisher = publisher;
         _bus = bus;
+        _topology = topology;
         _options = options;
         _log = log;
     }
@@ -145,6 +149,11 @@ public sealed partial class OutboxPublisher : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (!_options.PublishInBackground) return;
+
+        // Nothing is published until every consumer's queue exists. A topic
+        // exchange drops what it cannot route, so publishing first would lose
+        // exactly the events a freshly deployed consumer was added to receive.
+        await _topology.Declared.WaitAsync(stoppingToken).ConfigureAwait(false);
 
         while (!stoppingToken.IsCancellationRequested)
         {
