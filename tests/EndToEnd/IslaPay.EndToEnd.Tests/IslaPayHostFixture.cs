@@ -1,5 +1,8 @@
+using System.Collections.Concurrent;
+using IslaPay.Identity;
 using IslaPay.TestSupport;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Hosting;
 
@@ -34,6 +37,13 @@ public sealed class IslaPayHostFixture : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
+        // Before anything else: these are durable quorum queues, and a broker
+        // that keeps one per run eventually cannot declare another.
+        await TestQueues.DeleteAsync(
+            new Platform.Messaging.MessagingOptions { HostName = RabbitHost },
+            ConsumerSuffix,
+            ("wallet", "identity"));
+
         await Keycloak.DisposeAsync();
         Keycloak.Dispose();
         await Postgres.DisposeAsync();
@@ -60,6 +70,9 @@ public sealed class IslaPayHost : WebApplicationFactory<Program>
         _fixture = fixture;
         _brokerPort = brokerPort;
     }
+
+    /// <summary>The one substitution: a test cannot read an SMS.</summary>
+    public RecordingOtpSender Codes { get; } = new();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -91,7 +104,46 @@ public sealed class IslaPayHost : WebApplicationFactory<Program>
         // the poller drains on startup and the event arrives before a test can
         // assert that it has not.
         builder.UseSetting("Outbox:PublishInBackground", "false");
+
+        builder.UseSetting("Otp:ResendCooldown", "00:00:00");
+
+        builder.ConfigureServices(services =>
+        {
+            foreach (var registration in services
+                .Where(d => d.ServiceType == typeof(IOtpSender)).ToList())
+            {
+                services.Remove(registration);
+            }
+
+            services.AddSingleton<IOtpSender>(Codes);
+        });
     }
+}
+
+/// <summary>
+/// Captures one-time codes instead of sending them.
+/// </summary>
+/// <remarks>
+/// The Identity module's own tests have one of these too. It is not shared,
+/// because sharing it would put an interface from a module’s internals into
+/// the common test project, and every other module’s tests would inherit a
+/// dependency on Identity through it.
+/// </remarks>
+public sealed class RecordingOtpSender : IOtpSender
+{
+    private readonly ConcurrentDictionary<(OtpPurpose, string), string> _sent = new();
+
+    public Task SendAsync(
+        OtpPurpose purpose, string destination, string code, CancellationToken ct = default)
+    {
+        _sent[(purpose, destination)] = code;
+        return Task.CompletedTask;
+    }
+
+    public string CodeFor(OtpPurpose purpose, string destination) =>
+        _sent.TryGetValue((purpose, destination), out var code)
+            ? code
+            : throw new InvalidOperationException($"No {purpose} code was sent to {destination}.");
 }
 
 [CollectionDefinition(Name)]

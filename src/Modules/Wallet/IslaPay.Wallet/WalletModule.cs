@@ -2,6 +2,7 @@ using IslaPay.Identity.Contracts;
 using IslaPay.Platform.AspNet;
 using IslaPay.Platform.Messaging;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -22,6 +23,9 @@ public sealed class WalletModule : IIslaPayModule
     public void AddServices(IHostApplicationBuilder builder)
     {
         ArgumentNullException.ThrowIfNull(builder);
+
+        builder.Services.AddSingleton(
+            builder.Configuration.GetSection("Wallet").Get<WalletOptions>() ?? new WalletOptions());
 
         builder.Services.AddScoped<WalletService>();
         builder.Services.AddScoped<UserRegisteredHandler>();

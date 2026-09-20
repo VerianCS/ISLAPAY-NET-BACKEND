@@ -20,6 +20,7 @@
       catch it here, because a support project is not a module's tests.
     -->
     <ProjectReference Include="..\..\..\src\Platform\IslaPay.Platform.Data\IslaPay.Platform.Data.csproj" />
+    <ProjectReference Include="..\..\..\src\Platform\IslaPay.Platform.Messaging\IslaPay.Platform.Messaging.csproj" />
   </ItemGroup>
 
 </Project>

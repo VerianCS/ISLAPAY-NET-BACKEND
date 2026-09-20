@@ -70,24 +70,55 @@ public interface IAdminClient
 /// kept to the six operations the identity flows actually need, and the
 /// service-account token is cached in memory only, never written anywhere.
 /// </remarks>
-public sealed class KeycloakAdminClient : IAdminClient, IDisposable
+[System.Diagnostics.CodeAnalysis.SuppressMessage(
+    "Design", "CA1001:Types that own disposable fields should be disposable",
+    Justification = "The semaphore is deliberately not disposed; see the note at the end of this type.")]
+public sealed class KeycloakAdminClient : IAdminClient
 {
-    private readonly HttpClient _http;
+    /// <summary>The named client this uses, configured by the module.</summary>
+    public const string HttpClientName = "keycloak-admin";
+
+    private readonly IHttpClientFactory _factory;
     private readonly KeycloakOptions _options;
     private readonly TimeProvider _clock;
+    // Not disposed, and the analyser is told so below rather than silenced
+    // globally: see the note where Dispose used to be.
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Design", "CA2213:Disposable fields should be disposed",
+        Justification = "See the note at the end of this type.")]
     private readonly SemaphoreSlim _tokenGate = new(1, 1);
 
     private string? _token;
     private DateTimeOffset _tokenExpiresAt;
 
-    public KeycloakAdminClient(HttpClient http, KeycloakOptions options, TimeProvider? clock = null)
+    /// <summary>
+    /// Takes a factory rather than a client, because this is a singleton.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// It has to be a singleton: the service-account token it caches is the
+    /// whole point, and a new instance per call caches nothing — every
+    /// administrative request would begin with a <c>client_credentials</c>
+    /// round trip to Keycloak.
+    /// </para>
+    /// <para>
+    /// A singleton must not hold an <see cref="HttpClient"/> for ever, though,
+    /// because that pins the handler underneath it and defeats the pooling and
+    /// DNS rotation the factory exists to provide. So: one client per call,
+    /// from the factory, which is cheap.
+    /// </para>
+    /// </remarks>
+    public KeycloakAdminClient(
+        IHttpClientFactory factory, KeycloakOptions options, TimeProvider? clock = null)
     {
-        ArgumentNullException.ThrowIfNull(http);
+        ArgumentNullException.ThrowIfNull(factory);
         ArgumentNullException.ThrowIfNull(options);
-        _http = http;
+        _factory = factory;
         _options = options;
         _clock = clock ?? TimeProvider.System;
     }
+
+    private HttpClient Http() => _factory.CreateClient(HttpClientName);
 
     public async Task<KeycloakUser?> FindByEmailAsync(string email, CancellationToken ct = default)
     {
@@ -313,7 +344,8 @@ public sealed class KeycloakAdminClient : IAdminClient, IDisposable
                 ["client_secret"] = _options.AdminClientSecret,
             };
 
-            using var response = await _http
+            using var http = Http();
+            using var response = await http
                 .PostAsync(_options.TokenEndpoint, new FormUrlEncodedContent(form), ct)
                 .ConfigureAwait(false);
 
@@ -350,7 +382,8 @@ public sealed class KeycloakAdminClient : IAdminClient, IDisposable
     {
         try
         {
-            return await _http.SendAsync(request, ct).ConfigureAwait(false);
+            using var http = Http();
+            return await http.SendAsync(request, ct).ConfigureAwait(false);
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException)
         {
@@ -379,5 +412,13 @@ public sealed class KeycloakAdminClient : IAdminClient, IDisposable
         return space < 0 ? (trimmed, string.Empty) : (trimmed[..space], trimmed[(space + 1)..].Trim());
     }
 
-    public void Dispose() => _tokenGate.Dispose();
+    // No Dispose, deliberately.
+    //
+    // SemaphoreSlim only needs disposing if its AvailableWaitHandle was used,
+    // and it is not. Disposing it was actively harmful: the container disposes
+    // this on shutdown, and anything still waiting on the gate — a request
+    // finishing, a readiness probe — then throws ObjectDisposedException for a
+    // reason that has nothing to do with what it was doing. That was a test
+    // failing roughly one run in three, reported as "cannot access a disposed
+    // object" with no hint of where it came from.
 }

@@ -1,5 +1,7 @@
 using System.Security.Claims;
 using IslaPay.Platform.Api;
+using IslaPay.Platform.AspNet;
+using IslaPay.Wallet.Contracts;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -31,6 +33,22 @@ public static class WalletEndpoints
                 .HistoryAsync(SubjectOf(caller), Math.Clamp(limit ?? 20, 1, 100), cursor, ct)
                 .ConfigureAwait(false)));
 
+        // Outside the /v1/me group: this one is not a view of the caller, it
+        // is an instruction. It still takes the sender from the token.
+        routes.MapPost("/v1/transfers", async (
+            TransferRequest request, ClaimsPrincipal caller, HttpContext context,
+            WalletService wallet, CancellationToken ct) =>
+            Results.Ok(await wallet.TransferAsync(
+                SubjectOf(caller),
+                request,
+                context.Request.Headers[IdempotencyMiddleware.HeaderName].ToString(),
+                ct).ConfigureAwait(false)))
+            .RequireAuthorization()
+            // The middleware refuses the request without a key, so the handler
+            // above can rely on there being one.
+            .WithMetadata(new IdempotentAttribute())
+            .WithTags("Wallet");
+
         return group;
     }
 
@@ -49,20 +67,4 @@ public static class WalletEndpoints
         ?? throw new WalletException(
             PlatformErrors.TokenInvalid, StatusCodes.Status401Unauthorized,
             "The token carries no subject.");
-}
-
-/// <summary>A Wallet failure the platform can translate without knowing Wallet.</summary>
-public sealed class WalletException : Exception, IApiFailure
-{
-    public WalletException(string code, int status, string message) : base(message)
-    {
-        Code = code;
-        Status = status;
-    }
-
-    public string Code { get; }
-
-    public int Status { get; }
-
-    public IReadOnlyDictionary<string, object>? Meta => null;
 }

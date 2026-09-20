@@ -25,7 +25,7 @@ public class PostgresLedgerTests
     private PostgresLedger Ledger()
     {
         Skip.IfNot(_postgres.Available, "No Postgres reachable.");
-        return new PostgresLedger(_postgres.Database);
+        return _postgres.Ledger();
     }
 
     private static string NewUser() => $"u{Guid.NewGuid():N}"[..12];

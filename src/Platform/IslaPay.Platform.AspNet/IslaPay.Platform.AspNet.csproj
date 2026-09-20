@@ -11,6 +11,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The idempotency table travels with the code that reads it. -->
+    <EmbeddedResource Include="Migrations\**\*.sql" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\IslaPay.Platform.Api\IslaPay.Platform.Api.csproj" />
     <ProjectReference Include="..\IslaPay.Platform.Data\IslaPay.Platform.Data.csproj" />
     <ProjectReference Include="..\IslaPay.Platform.Messaging\IslaPay.Platform.Messaging.csproj" />

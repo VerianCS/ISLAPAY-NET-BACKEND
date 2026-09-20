@@ -84,17 +84,28 @@ public static class Conversions
                 nameof(amount));
         }
 
+        // The fee leg is omitted when the fee rounds to nothing.
+        //
+        // One per cent of twelve cents is a hundredth of a cent, and USD is
+        // accounted in cents: there is no way to charge it, so nothing is
+        // charged. Posting a zero leg instead is not an option — a leg that
+        // moves nothing is refused by the domain, which turned a conversion of
+        // a small amount into a crash rather than a conversion. Found by the
+        // property test, at 0.12.
+        List<Leg> legs =
+        [
+            new Leg(AccountId.User(userId, from), -amount),
+            new Leg(AccountId.SettlementFund(from), principal),
+            new Leg(AccountId.SettlementFund(to), -received),
+            new Leg(AccountId.User(userId, to), received),
+        ];
+
+        if (fee.IsPositive) legs.Insert(2, new Leg(AccountId.Fees(from), fee));
+
         return new Posting(
             id: id,
             kind: TransactionKind.Conversion,
-            legs:
-            [
-                new Leg(AccountId.User(userId, from), -amount),
-                new Leg(AccountId.SettlementFund(from), principal),
-                new Leg(AccountId.Fees(from), fee),
-                new Leg(AccountId.SettlementFund(to), -received),
-                new Leg(AccountId.User(userId, to), received),
-            ],
+            legs: legs,
             postedAt: at,
             idempotencyKey: idempotencyKey,
             correlationId: correlationId,
@@ -159,15 +170,20 @@ public static class Conversions
         var fee = amount.MultiplyByBasisPoints(Fees.P2PBps, Fees.Rounding);
         var principal = amount - fee;
 
+        // Same as a conversion: a fee that rounds to nothing is not charged,
+        // and must not be posted as a zero leg.
+        List<Leg> legs =
+        [
+            new Leg(AccountId.User(userId, amount.Currency), -amount),
+            new Leg(AccountId.SettlementFund(amount.Currency), principal),
+        ];
+
+        if (fee.IsPositive) legs.Add(new Leg(AccountId.Fees(amount.Currency), fee));
+
         return new Posting(
             id: id,
             kind: TransactionKind.Payment,
-            legs:
-            [
-                new Leg(AccountId.User(userId, amount.Currency), -amount),
-                new Leg(AccountId.SettlementFund(amount.Currency), principal),
-                new Leg(AccountId.Fees(amount.Currency), fee),
-            ],
+            legs: legs,
             postedAt: at,
             idempotencyKey: idempotencyKey,
             correlationId: correlationId,

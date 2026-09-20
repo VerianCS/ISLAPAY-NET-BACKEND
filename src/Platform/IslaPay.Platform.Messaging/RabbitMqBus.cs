@@ -232,6 +232,10 @@ public sealed class RabbitMqBus : IEventPublisher, IAsyncDisposable
     {
         if (_channel is not null) await _channel.DisposeAsync().ConfigureAwait(false);
         if (_connection is not null) await _connection.DisposeAsync().ConfigureAwait(false);
-        _gate.Dispose();
+
+        // The gate is deliberately not disposed. SemaphoreSlim only needs it
+        // when AvailableWaitHandle has been used, and disposing one that a
+        // background publisher may still be waiting on turns an ordinary
+        // shutdown into an ObjectDisposedException from somewhere unrelated.
     }
 }

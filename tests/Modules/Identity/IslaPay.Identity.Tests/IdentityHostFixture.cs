@@ -47,6 +47,17 @@ public sealed class IdentityHostFixture : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
+        // This host runs every module, Wallet included, so it declares Wallet's
+        // queues too. Durable quorum queues left behind accumulate until the
+        // broker cannot declare another — see TestQueues.
+        await TestQueues.DeleteAsync(
+            new Platform.Messaging.MessagingOptions
+            {
+                HostName = Environment.GetEnvironmentVariable("RABBITMQ_HOST") ?? "localhost",
+            },
+            ConsumerSuffix,
+            ("wallet", "identity"));
+
         await Keycloak.DisposeAsync();
         Keycloak.Dispose();
         await Postgres.DisposeAsync();

@@ -13,6 +13,7 @@
     <ProjectReference Include="..\IslaPay.Ledger.Domain\IslaPay.Ledger.Domain.csproj" />
     <ProjectReference Include="..\..\..\Platform\IslaPay.Platform.AspNet\IslaPay.Platform.AspNet.csproj" />
     <ProjectReference Include="..\..\..\Platform\IslaPay.Platform.Data\IslaPay.Platform.Data.csproj" />
+    <ProjectReference Include="..\..\..\Platform\IslaPay.Platform.Messaging\IslaPay.Platform.Messaging.csproj" />
   </ItemGroup>
 
 </Project>

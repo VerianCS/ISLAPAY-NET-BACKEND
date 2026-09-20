@@ -6,6 +6,7 @@ using IslaPay.Ledger.Contracts;
 using IslaPay.Ledger.Domain;
 using IslaPay.Platform;
 using IslaPay.Platform.Data;
+using IslaPay.Platform.Messaging;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -33,12 +34,15 @@ namespace IslaPay.Ledger;
 public sealed class PostgresLedger : ILedger
 {
     private readonly IDatabase _database;
+    private readonly IOutbox _outbox;
     private readonly TimeProvider _clock;
 
-    public PostgresLedger(IDatabase database, TimeProvider? clock = null)
+    public PostgresLedger(IDatabase database, IOutbox outbox, TimeProvider? clock = null)
     {
         ArgumentNullException.ThrowIfNull(database);
+        ArgumentNullException.ThrowIfNull(outbox);
         _database = database;
+        _outbox = outbox;
         _clock = clock ?? TimeProvider.System;
     }
 
@@ -155,6 +159,48 @@ public sealed class PostgresLedger : ILedger
 
     // ------------------------------------------------------------------ writes
 
+    /// <inheritdoc />
+    public async Task<PostingReceipt> PostAsync(
+        PostingRequest request, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var references = new Dictionary<string, AccountRef>(StringComparer.Ordinal);
+        var legs = new List<Leg>(request.Legs.Count);
+
+        foreach (var leg in request.Legs)
+        {
+            var account = Resolve(leg.Account);
+            references[account.ToString()] = leg.Account;
+            legs.Add(new Leg(account, leg.Amount));
+        }
+
+        // Constructed here, so an unbalanced request is refused by the domain
+        // before this class opens a transaction.
+        var posting = new Posting(
+            request.PostingId ?? Guid.NewGuid(),
+            ParseKind(request.Kind),
+            legs,
+            _clock.GetUtcNow(),
+            request.IdempotencyKey,
+            correlationId: null,
+            request.Metadata);
+
+        try
+        {
+            var (id, written) = await PostAsync(posting, request.Events, cancellationToken)
+                .ConfigureAwait(false);
+            return new PostingReceipt(id, written);
+        }
+        catch (Domain.InsufficientFundsException e)
+        {
+            // Translated at the boundary: a caller holds the contract's types
+            // and must not have to catch the domain's.
+            throw new Contracts.InsufficientFundsException(
+                references[e.Account.ToString()], e.Available, e.Requested);
+        }
+    }
+
     /// <summary>
     /// Records a posting, or returns the one an earlier attempt recorded.
     /// </summary>
@@ -173,7 +219,9 @@ public sealed class PostgresLedger : ILedger
     /// </remarks>
     /// <returns>The posting's id, and whether this call is the one that wrote it.</returns>
     public Task<(Guid Id, bool Written)> PostAsync(
-        Posting posting, CancellationToken cancellationToken = default)
+        Posting posting,
+        IReadOnlyList<PendingEvent>? events = null,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(posting);
 
@@ -213,7 +261,7 @@ public sealed class PostgresLedger : ILedger
 
                 if (projected < 0 && !group.Key.MayGoNegative)
                 {
-                    throw new InsufficientFundsException(
+                    throw new Domain.InsufficientFundsException(
                         group.Key,
                         Money.FromMinorUnits(current, group.Key.Currency),
                         Money.FromMinorUnits(-group.Sum(l => l.Amount.MinorUnits), group.Key.Currency));
@@ -244,11 +292,54 @@ public sealed class PostgresLedger : ILedger
                     connection, transaction, accountId, balance, ct).ConfigureAwait(false);
             }
 
+            // In this transaction, not after it. An event enqueued afterwards
+            // is a second write that can fail on its own, and an announced
+            // transfer that did not happen is worse than one that happened
+            // quietly.
+            foreach (var pending in events ?? [])
+            {
+                await _outbox.EnqueueAsync(
+                    connection, transaction,
+                    pending.Context, pending.RoutingKey, pending.Payload,
+                    correlationId: posting.Id.ToString(),
+                    cancellationToken: ct).ConfigureAwait(false);
+            }
+
             return (posting.Id, true);
         }, IsolationLevel.ReadCommitted, cancellationToken);
     }
 
     // ------------------------------------------------------------------ plumbing
+
+    /// <summary>Turns a contract reference into the domain's account identity.</summary>
+    private static AccountId Resolve(AccountRef account) => account.Owner switch
+    {
+        AccountOwner.User => AccountId.User(account.Id, account.Currency),
+        AccountOwner.Merchant => AccountId.Merchant(account.Id, account.Currency),
+        AccountOwner.Fees => AccountId.Fees(account.Currency),
+        AccountOwner.SettlementFund => AccountId.SettlementFund(account.Currency),
+        AccountOwner.Escrow => AccountId.Escrow(account.Currency),
+        AccountOwner.CashFloat => AccountId.CashFloat(account.Currency),
+        AccountOwner.External => AccountId.External(account.Id, account.Currency),
+        _ => throw new ArgumentOutOfRangeException(
+            nameof(account), account.Owner, "Unclassified account owner."),
+    };
+
+    /// <summary>
+    /// The ledger's own classification, from the string a caller sent.
+    /// </summary>
+    /// <remarks>
+    /// Rejected rather than defaulted when unknown. A posting filed under the
+    /// wrong kind is invisible to the report that was supposed to find it, and
+    /// a silent fallback is how that happens.
+    /// </remarks>
+    private static TransactionKind ParseKind(string kind) =>
+        Enum.TryParse<TransactionKind>(kind, ignoreCase: true, out var parsed)
+            ? parsed
+            : throw new ArgumentException(
+                $"'{kind}' is not a transaction kind. Expected one of: "
+                + string.Join(", ", Enum.GetNames<TransactionKind>()).ToLowerInvariant(),
+                nameof(kind));
 
     private readonly record struct BalanceState(long MinorUnits, long EntryCount);
 

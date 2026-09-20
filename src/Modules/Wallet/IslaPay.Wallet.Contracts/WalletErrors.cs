@@ -34,6 +34,19 @@ public static class WalletErrors
     public const string MissingDeliveryAddress = "missing_delivery_address";
 
     /// <summary>
+    /// A transfer addressed to the sender. Refused rather than allowed as a
+    /// no-op: it would post two legs, appear twice in the history and confuse
+    /// anyone reading it, all to move nothing.
+    /// </summary>
+    public const string SelfTransfer = "self_transfer";
+
+    /// <summary>
+    /// Money cannot move until the account's phone is proved (D11). The client
+    /// sends the user to the verification screen; this is not a dead end.
+    /// </summary>
+    public const string PhoneNotVerified = "phone_not_verified";
+
+    /// <summary>
     /// This module's codes whose <c>meta</c> must carry a <c>currency</c>,
     /// because the client's corresponding type cannot be constructed without
     /// one.

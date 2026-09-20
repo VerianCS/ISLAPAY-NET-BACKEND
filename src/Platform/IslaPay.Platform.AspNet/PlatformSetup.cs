@@ -71,6 +71,10 @@ public static class PlatformSetup
         builder.Services.AddSingleton(data);
         builder.Services.AddSingleton<IDatabase, Database>();
         builder.Services.AddSingleton<IReadinessCheck, DatabaseReadiness>();
+        builder.Services.AddSingleton<IdempotencyStore>();
+        builder.Services.AddSingleton(new MigrationSet(
+            "platform", typeof(IdempotencyStore).Assembly,
+            "IslaPay.Platform.AspNet.Migrations."));
 
         // Messaging. Registered for every host because the outbox is how any
         // module publishes anything; a host with no producers and no
@@ -135,8 +139,22 @@ public static class PlatformSetup
                 cancellationToken).ConfigureAwait(false);
         }
 
-        // First, so it also catches what an endpoint throws before any other
-        // middleware has written to the response.
+        // Explicit, because the idempotency middleware needs two things that
+        // only exist after these: the matched endpoint, to see whether it opted
+        // in, and the caller, to scope the key to them.
+        app.UseRouting();
+        app.UseAuthentication();
+        app.UseAuthorization();
+        app.UseMiddleware<IdempotencyMiddleware>();
+
+        // Inside the idempotency middleware, not outside it.
+        //
+        // A refusal is usually raised as an exception, and if the translation
+        // happened further out then idempotency would see an exception rather
+        // than a 422 — and release the key, so the client's retry would run
+        // the request again instead of being told the same thing twice. Here
+        // the failure is already a response by the time idempotency looks at
+        // it.
         app.Use(async (context, next) =>
         {
             try
@@ -160,9 +178,6 @@ public static class PlatformSetup
                     "The request body could not be read as JSON.");
             }
         });
-
-        app.UseAuthentication();
-        app.UseAuthorization();
 
         MapHealth(app);
 

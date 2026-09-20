@@ -86,6 +86,8 @@ public class RabbitMqBusTests
         await bus.DeclareQueueAsync("notification", context, "transfer.*.v1");
 
         Assert.True(bus.IsConnected);
+
+        await DeleteQueuesAsync(context);
     }
 
     [SkippableFact]
@@ -122,6 +124,8 @@ public class RabbitMqBusTests
         Assert.Equal(DeliveryModes.Persistent, properties.DeliveryMode);
         Assert.NotNull(properties.MessageId);
         Assert.Equal("v1", Header(properties, "schema-version"));
+
+        await DeleteQueuesAsync(context);
     }
 
     [SkippableFact]
@@ -144,6 +148,8 @@ public class RabbitMqBusTests
 
         var (body, _) = await ConsumeOneAsync(queue, TimeSpan.FromSeconds(2));
         Assert.Null(body);
+
+        await DeleteQueuesAsync(context);
     }
 
     [SkippableFact]
@@ -163,6 +169,36 @@ public class RabbitMqBusTests
     }
 
     // ------------------------------------------------------------------ helpers
+
+    /// <summary>
+    /// Removes the queues a test declared.
+    /// </summary>
+    /// <remarks>
+    /// These are durable quorum queues, and a quorum queue is a Raft cluster
+    /// the broker keeps for ever. Leaving one behind per test looks harmless
+    /// and is not: after a few hundred runs on one machine, declaring a queue
+    /// starts to time out and every test that publishes fails with something
+    /// that points nowhere near the cause. CI never sees it, because CI throws
+    /// the broker away.
+    /// </remarks>
+    private static async Task DeleteQueuesAsync(string context)
+    {
+        try
+        {
+            var factory = new ConnectionFactory { HostName = Options().HostName };
+            await using var connection = await factory.CreateConnectionAsync();
+            await using var channel = await connection.CreateChannelAsync();
+
+            var queue = Naming.Queue("notification", context);
+            await channel.QueueDeleteAsync(queue, ifUnused: false, ifEmpty: false);
+            await channel.QueueDeleteAsync($"{queue}.dlq", ifUnused: false, ifEmpty: false);
+            await channel.ExchangeDeleteAsync(Naming.Exchange(context));
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            // Cleanup must never turn a passing test red.
+        }
+    }
 
     private static async Task<(byte[]? Body, IReadOnlyBasicProperties? Properties)>
         ConsumeOneAsync(string queue, TimeSpan? wait = null)

@@ -35,11 +35,10 @@ public sealed record LedgerEntryPage(IReadOnlyList<LedgerEntryView> Items, strin
 /// </summary>
 /// <remarks>
 /// <para>
-/// Deliberately narrow. Posting money is <em>not</em> here: nothing outside
-/// the Ledger module needs it yet, and publishing an API before it has a
-/// caller is how an interface acquires a shape that fits nobody. When a module
-/// does need to move money, that call gets designed then, with a real use to
-/// design against.
+/// Narrow on purpose, and it grew only when something needed it:
+/// <see cref="PostAsync"/> arrived with the first caller that moves money,
+/// designed against a real use rather than an imagined one. There is still no
+/// method here that a caller does not have.
 /// </para>
 /// <para>
 /// Nothing in this file mentions a table, a connection or SQL, and nothing
@@ -79,4 +78,19 @@ public interface ILedger
         int limit,
         string? cursor = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Records a transaction, and anything it should announce, as one unit.
+    /// </summary>
+    /// <remarks>
+    /// The legs must sum to zero per currency; a request that does not is
+    /// rejected before anything is written. Accounts are opened if they do not
+    /// exist, so a first payment to a merchant does not need a separate step.
+    /// </remarks>
+    /// <exception cref="InsufficientFundsException">
+    /// An account that may not go negative would have been overdrawn. Nothing
+    /// is written — not the leg that overdrew, and not the ones before it.
+    /// </exception>
+    Task<PostingReceipt> PostAsync(
+        PostingRequest request, CancellationToken cancellationToken = default);
 }

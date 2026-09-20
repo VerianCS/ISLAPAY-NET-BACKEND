@@ -1,3 +1,4 @@
+using IslaPay.Identity.Contracts;
 using IslaPay.Platform.AspNet;
 using Microsoft.Extensions.Configuration;
 using Microsoft.AspNetCore.Routing;
@@ -34,8 +35,13 @@ public sealed class IdentityModule : IIslaPayModule
         builder.Services.AddHttpClient<ITokenClient, KeycloakTokenClient>(client =>
             client.Timeout = keycloak.HttpTimeout);
 
-        builder.Services.AddHttpClient<IAdminClient, KeycloakAdminClient>(client =>
+        // A singleton, not a typed client. A typed client is transient, and a
+        // transient admin client re-authenticates on every call because the
+        // token it caches dies with the instance.
+        builder.Services.AddHttpClient(KeycloakAdminClient.HttpClientName, client =>
             client.Timeout = keycloak.HttpTimeout);
+        builder.Services.AddSingleton<IAdminClient>(sp => new KeycloakAdminClient(
+            sp.GetRequiredService<IHttpClientFactory>(), keycloak));
 
         builder.Services.AddSingleton<IOtpStore, InMemoryOtpStore>();
 
@@ -59,6 +65,10 @@ public sealed class IdentityModule : IIslaPayModule
                 + $"running in {builder.Environment.EnvironmentName}; one-time codes cannot "
                 + "be written to the log outside Development.");
         }
+
+        // The read-only face other modules use. The admin client behind it
+        // stays internal, because it can take over any account in the realm.
+        builder.Services.AddSingleton<IUserDirectory, KeycloakUserDirectory>();
 
         builder.Services.AddSingleton<OtpService>();
         builder.Services.AddScoped<IdentityService>();

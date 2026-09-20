@@ -311,7 +311,16 @@ public class LedgerPropertyTests
                 var posting = Conversions.BuildConversion(
                     Guid.NewGuid(), "alice", amount, to, "1.0", At(1));
 
-                var fee = posting.Legs.Single(l => l.Account == AccountId.Fees(amount.Currency)).Amount;
+                // SingleOrDefault, not Single. Below roughly half a unit the
+                // one per cent rounds to nothing and there is no fee leg at
+                // all — charging zero is not the same as charging, and a leg
+                // that moves nothing is refused by the domain. Assuming the
+                // leg was always there is what hid that for as long as it did.
+                var fee = posting.Legs
+                    .Where(l => l.Account == AccountId.Fees(amount.Currency))
+                    .Select(l => l.Amount)
+                    .SingleOrDefault(Money.Zero(amount.Currency));
+
                 Assert.False(fee.IsNegative);
                 Assert.True(fee <= amount);
             }, iter: 500);
@@ -323,4 +332,64 @@ public class LedgerPropertyTests
     private static void Fund(Ledger ledger, string user, Currency currency, string amount, int at) =>
         ledger.Post(Conversions.BuildDeposit(
             Guid.NewGuid(), user, Money.Parse(amount, currency), "bank:seed", At(at)));
+}
+
+/// <summary>
+/// The amounts too small for a percentage to bite.
+/// </summary>
+/// <remarks>
+/// Found by the property test above, which is what property tests are for: one
+/// per cent of twelve cents is a hundredth of a cent, USD is accounted in
+/// cents, and a fee that cannot be charged was being posted as a zero leg —
+/// which the domain refuses, so the conversion threw instead of happening.
+/// These pin the answer so the next person to touch rounding finds out at
+/// once, with an example rather than a seed.
+/// </remarks>
+public class RoundingToNothingTests
+{
+    [Theory]
+    [InlineData("0.12")]
+    [InlineData("0.01")]
+    [InlineData("0.49")]
+    public void A_conversion_whose_fee_rounds_to_zero_still_happens(string amount)
+    {
+        var posting = Conversions.BuildConversion(
+            Guid.NewGuid(), "u1", Money.Parse(amount, Currency.Usd),
+            Currency.Usdt, "1.0000", DateTimeOffset.UtcNow);
+
+        // No fee leg at all, rather than one that moves nothing.
+        Assert.DoesNotContain(posting.Legs, l => l.Account == AccountId.Fees(Currency.Usd));
+        Assert.All(posting.Legs, l => Assert.NotEqual(0, l.Amount.MinorUnits));
+
+        // And it still balances in both currencies, which is the only thing
+        // that was ever non-negotiable.
+        foreach (var currency in posting.Currencies)
+        {
+            Assert.Equal(0, posting.Legs
+                .Where(l => l.Amount.Currency == currency)
+                .Sum(l => l.Amount.MinorUnits));
+        }
+    }
+
+    [Fact]
+    public void A_p2p_sale_whose_fee_rounds_to_zero_still_happens()
+    {
+        var posting = Conversions.BuildP2PSale(
+            Guid.NewGuid(), "u1", Money.Parse("0.12", Currency.Usd), DateTimeOffset.UtcNow);
+
+        Assert.DoesNotContain(posting.Legs, l => l.Account == AccountId.Fees(Currency.Usd));
+        Assert.Equal(0, posting.Legs.Sum(l => l.Amount.MinorUnits));
+    }
+
+    [Fact]
+    public void A_fee_that_does_round_to_something_is_still_charged()
+    {
+        // The guard above must not have quietly made every conversion free.
+        var posting = Conversions.BuildConversion(
+            Guid.NewGuid(), "u1", Money.Parse("100.00", Currency.Usd),
+            Currency.Usdt, "1.0000", DateTimeOffset.UtcNow);
+
+        var fee = posting.Legs.Single(l => l.Account == AccountId.Fees(Currency.Usd));
+        Assert.Equal("1.00", fee.Amount.ToString());
+    }
 }
