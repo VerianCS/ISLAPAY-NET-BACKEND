@@ -53,6 +53,16 @@ public sealed class IslaPayApiFactory : WebApplicationFactory<Program>
 
         builder.UseEnvironment(Environments.Development);
 
+        // Warning, not the Development default of Debug.
+        //
+        // The host logs every request, every HTTP call to Keycloak and every
+        // hosted-service transition. Across five suites that is half a million
+        // characters of CI log, and the one thing it reliably buries is the
+        // test failure you are looking for — which cost an afternoon of
+        // guessing at a red build whose reason was in there somewhere.
+        builder.UseSetting("Logging:LogLevel:Default", "Warning");
+        builder.UseSetting("Logging:LogLevel:Microsoft.AspNetCore", "Warning");
+
         // Through configuration, not through DI.
         //
         // The bearer middleware reads its realm, issuer and audience while the
