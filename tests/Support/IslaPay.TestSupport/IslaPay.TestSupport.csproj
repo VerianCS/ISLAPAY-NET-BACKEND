@@ -2,6 +2,16 @@
 
   <PropertyGroup>
     <IsPackable>false</IsPackable>
+
+    <!--
+      Shared fixtures, not a suite. It references xunit so fixtures can
+      implement IAsyncLifetime, and `dotnet test` on the solution will
+      otherwise try to run it: a library's output carries no NuGet
+      assemblies, so the test host starts, fails to resolve them from the
+      deps manifest, and aborts the whole run with exit code 1 while every
+      real suite reports green. Which is exactly how this was found.
+    -->
+    <IsTestProject>false</IsTestProject>
   </PropertyGroup>
 
   <ItemGroup>
