@@ -1,17 +1,54 @@
 <Solution>
-  <Folder Name="/src/">
-    <Project Path="src/IslaPay.Api/IslaPay.Api.csproj" />
-    <Project Path="src/IslaPay.Contracts/IslaPay.Contracts.csproj" />
-    <Project Path="src/IslaPay.Identity/IslaPay.Identity.csproj" />
-    <Project Path="src/IslaPay.Ledger.Domain/IslaPay.Ledger.Domain.csproj" />
-    <Project Path="src/IslaPay.Platform.Messaging/IslaPay.Platform.Messaging.csproj" />
-    <Project Path="src/IslaPay.Platform.Money/IslaPay.Platform.Money.csproj" />
+  <!--
+    The shape of the system, visible from the file that opens it.
+
+    Platform is technical and knows no business. Each folder under Modules is
+    one bounded context: its .Contracts assembly is its public face and the
+    only part another module may reference. Host is the single deployable and
+    the only project allowed to compose modules.
+
+    IslaPay.Architecture.Tests enforces all of that against the .csproj graph,
+    so this comment cannot drift away from the truth without the build failing.
+  -->
+  <Folder Name="/src/Platform/">
+    <Project Path="src/Platform/IslaPay.Platform.Api/IslaPay.Platform.Api.csproj" />
+    <Project Path="src/Platform/IslaPay.Platform.AspNet/IslaPay.Platform.AspNet.csproj" />
+    <Project Path="src/Platform/IslaPay.Platform.Messaging/IslaPay.Platform.Messaging.csproj" />
+    <Project Path="src/Platform/IslaPay.Platform.Money/IslaPay.Platform.Money.csproj" />
+    <Project Path="src/Platform/IslaPay.Platform.Serialization/IslaPay.Platform.Serialization.csproj" />
   </Folder>
-  <Folder Name="/tests/">
-    <Project Path="tests/IslaPay.Contracts.Tests/IslaPay.Contracts.Tests.csproj" />
-    <Project Path="tests/IslaPay.Identity.Tests/IslaPay.Identity.Tests.csproj" />
-    <Project Path="tests/IslaPay.Ledger.Domain.Tests/IslaPay.Ledger.Domain.Tests.csproj" />
-    <Project Path="tests/IslaPay.Platform.Messaging.Tests/IslaPay.Platform.Messaging.Tests.csproj" />
-    <Project Path="tests/IslaPay.Platform.Money.Tests/IslaPay.Platform.Money.Tests.csproj" />
+  <Folder Name="/src/Modules/Identity/">
+    <Project Path="src/Modules/Identity/IslaPay.Identity/IslaPay.Identity.csproj" />
+    <Project Path="src/Modules/Identity/IslaPay.Identity.Contracts/IslaPay.Identity.Contracts.csproj" />
+  </Folder>
+  <Folder Name="/src/Modules/Ledger/">
+    <Project Path="src/Modules/Ledger/IslaPay.Ledger.Domain/IslaPay.Ledger.Domain.csproj" />
+  </Folder>
+  <Folder Name="/src/Modules/Wallet/">
+    <Project Path="src/Modules/Wallet/IslaPay.Wallet.Contracts/IslaPay.Wallet.Contracts.csproj" />
+  </Folder>
+  <Folder Name="/src/Modules/Exchange/">
+    <Project Path="src/Modules/Exchange/IslaPay.Exchange.Contracts/IslaPay.Exchange.Contracts.csproj" />
+  </Folder>
+  <Folder Name="/src/Modules/P2P/">
+    <Project Path="src/Modules/P2P/IslaPay.P2P.Contracts/IslaPay.P2P.Contracts.csproj" />
+  </Folder>
+  <Folder Name="/src/Host/">
+    <Project Path="src/IslaPay.Host/IslaPay.Host.csproj" />
+  </Folder>
+  <Folder Name="/tests/Platform/">
+    <Project Path="tests/Platform/IslaPay.Platform.Api.Tests/IslaPay.Platform.Api.Tests.csproj" />
+    <Project Path="tests/Platform/IslaPay.Platform.Messaging.Tests/IslaPay.Platform.Messaging.Tests.csproj" />
+    <Project Path="tests/Platform/IslaPay.Platform.Money.Tests/IslaPay.Platform.Money.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/Modules/">
+    <Project Path="tests/Modules/Exchange/IslaPay.Exchange.Tests/IslaPay.Exchange.Tests.csproj" />
+    <Project Path="tests/Modules/Identity/IslaPay.Identity.Tests/IslaPay.Identity.Tests.csproj" />
+    <Project Path="tests/Modules/Ledger/IslaPay.Ledger.Domain.Tests/IslaPay.Ledger.Domain.Tests.csproj" />
+    <Project Path="tests/Modules/P2P/IslaPay.P2P.Tests/IslaPay.P2P.Tests.csproj" />
+    <Project Path="tests/Modules/Wallet/IslaPay.Wallet.Tests/IslaPay.Wallet.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/Architecture/">
+    <Project Path="tests/Architecture/IslaPay.Architecture.Tests/IslaPay.Architecture.Tests.csproj" />
   </Folder>
 </Solution>

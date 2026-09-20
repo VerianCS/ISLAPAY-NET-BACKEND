@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <AssemblyName>IslaPay.Host</AssemblyName>
+    <RootNamespace>IslaPay.Host</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      The composition root is the one project allowed to reference a module's
+      internals, because composing them is its whole job. Every other
+      reference to a module must go through that module's .Contracts — see
+      IslaPay.Architecture.Tests, which fails the build otherwise.
+
+      Adding a context means adding a line here and nothing else.
+    -->
+    <ProjectReference Include="..\Modules\Identity\IslaPay.Identity\IslaPay.Identity.csproj" />
+  </ItemGroup>
+
+</Project>

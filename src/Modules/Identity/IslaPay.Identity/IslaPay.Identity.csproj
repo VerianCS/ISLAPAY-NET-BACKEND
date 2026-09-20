@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <!--
+      NewCode is internal because nothing outside this assembly should be
+      generating one, and the test that proves it is unbiased has to reach it.
+    -->
+    <InternalsVisibleTo Include="IslaPay.Identity.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\IslaPay.Identity.Contracts\IslaPay.Identity.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\Platform\IslaPay.Platform.AspNet\IslaPay.Platform.AspNet.csproj" />
+  </ItemGroup>
+
+</Project>

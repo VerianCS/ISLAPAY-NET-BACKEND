@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The wire format, and only the wire format. No module's DTOs live here, so
+    a transport or a module can take a dependency on how IslaPay serialises
+    without inheriting every bounded context's types.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\IslaPay.Platform.Money\IslaPay.Platform.Money.csproj" />
+  </ItemGroup>
+
+</Project>

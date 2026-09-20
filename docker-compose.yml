@@ -6,7 +6,7 @@
 # deployment.
 #
 #   docker compose up -d
-#   dotnet run --project src/IslaPay.Api
+#   dotnet run --project src/IslaPay.Host
 #
 # The integration tests read KEYCLOAK_URL and RABBITMQ_HOST, which default to
 # localhost — so with this running, they run rather than skip.

@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The Identity module's public face: the shapes it accepts and returns, and
+    the codes it raises. This is the only part of Identity another module may
+    reference. Its internals are off limits by construction — see the
+    architecture tests.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\Platform\IslaPay.Platform.Api\IslaPay.Platform.Api.csproj" />
+  </ItemGroup>
+
+</Project>

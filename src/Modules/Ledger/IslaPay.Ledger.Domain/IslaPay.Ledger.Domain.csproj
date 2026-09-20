@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The ledger's rules, with no infrastructure at all: no database, no HTTP, no
+    bus. That is on purpose — the invariants in §8.3 are worth stating
+    independently of where the entries are stored, and the property tests that
+    hunt for counterexamples need to run thousands of sequences per second.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\Platform\IslaPay.Platform.Money\IslaPay.Platform.Money.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The shared HTTP vocabulary: the problem document, the page envelope, and
+    the error codes the platform itself raises. Deliberately has no
+    dependencies at all — everything above it may reference it, and it may
+    reference nothing, which is what keeps the dependency graph a tree.
+  -->
+
+</Project>

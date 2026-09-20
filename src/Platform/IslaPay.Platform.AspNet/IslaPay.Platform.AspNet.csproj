@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <!--
+      A library, not a host, but it needs the ASP.NET types to offer the module
+      contract and the shared pipeline. FrameworkReference rather than the
+      Web SDK: this project produces no appsettings, no launch profile and no
+      entry point, and pretending otherwise invites someone to run it.
+    -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\IslaPay.Platform.Api\IslaPay.Platform.Api.csproj" />
+    <ProjectReference Include="..\IslaPay.Platform.Serialization\IslaPay.Platform.Serialization.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.0" />
+  </ItemGroup>
+
+</Project>

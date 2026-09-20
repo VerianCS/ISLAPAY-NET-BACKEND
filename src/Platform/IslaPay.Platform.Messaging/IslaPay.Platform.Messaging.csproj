@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <!--
+      Serialization, not contracts. This is a transport: it must be able to
+      publish any module's event without knowing what any module's events are.
+      It previously referenced the shared contracts package for one line of
+      JSON configuration, and dragged four bounded contexts' DTOs with it.
+    -->
+    <ProjectReference Include="..\IslaPay.Platform.Serialization\IslaPay.Platform.Serialization.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="RabbitMQ.Client" Version="7.1.2" />
+  </ItemGroup>
+
+</Project>
