@@ -133,6 +133,23 @@ public sealed partial class RabbitMqSubscriber : BackgroundService
             {
                 ConnectFailed(_log, e.Message, _options.RecoveryInterval.TotalSeconds);
 
+                // Close what the failed attempt left behind, or every retry
+                // adds another connection the broker has to hold open.
+                var failed = Interlocked.Exchange(ref _connection, null);
+                if (failed is not null)
+                {
+                    try
+                    {
+                        await failed.DisposeAsync().ConfigureAwait(false);
+                    }
+                    catch (Exception close) when (close is not OperationCanceledException)
+                    {
+                        ShutdownFailed(_log, close.Message);
+                    }
+                }
+
+                _channels.Clear();
+
                 try
                 {
                     await Task.Delay(_options.RecoveryInterval, stoppingToken).ConfigureAwait(false);
@@ -192,12 +209,42 @@ public sealed partial class RabbitMqSubscriber : BackgroundService
         Subscribed(_log, queue, subscription.BindingPattern);
     }
 
+    /// <summary>
+    /// Closes the connection, and lets it close its own channels.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Only the connection, deliberately. Disposing each channel first races
+    /// the client's own recovery bookkeeping: closing a channel makes it
+    /// deregister itself from the connection, and if the connection has begun
+    /// tearing down it releases a semaphore it has already disposed. The
+    /// result is an <see cref="ObjectDisposedException"/> thrown from inside
+    /// the library during an ordinary shutdown — intermittently, because it
+    /// depends on which side gets there first.
+    /// </para>
+    /// <para>
+    /// Swallowed as well. A broker that went away before we did leaves nothing
+    /// to close, and a failure while shutting down must not fail the shutdown.
+    /// </para>
+    /// </remarks>
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
         await base.StopAsync(cancellationToken).ConfigureAwait(false);
 
-        foreach (var channel in _channels) await channel.DisposeAsync().ConfigureAwait(false);
-        if (_connection is not null) await _connection.DisposeAsync().ConfigureAwait(false);
+        var connection = Interlocked.Exchange(ref _connection, null);
+
+        try
+        {
+            if (connection is not null) await connection.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            ShutdownFailed(_log, e.Message);
+        }
+        finally
+        {
+            _channels.Clear();
+        }
     }
 
     /// <summary>Reads a message body as UTF-8 JSON.</summary>
@@ -219,4 +266,8 @@ public sealed partial class RabbitMqSubscriber : BackgroundService
     [LoggerMessage(EventId = 3, Level = LogLevel.Warning,
         Message = "Could not consume: {error}. Retrying in {seconds}s.")]
     private static partial void ConnectFailed(ILogger logger, string error, double seconds);
+
+    [LoggerMessage(EventId = 4, Level = LogLevel.Debug,
+        Message = "The consumer connection did not close cleanly: {error}")]
+    private static partial void ShutdownFailed(ILogger logger, string error);
 }
