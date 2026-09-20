@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\IslaPay.Platform.Api\IslaPay.Platform.Api.csproj" />
+    <ProjectReference Include="..\IslaPay.Platform.Data\IslaPay.Platform.Data.csproj" />
     <ProjectReference Include="..\IslaPay.Platform.Serialization\IslaPay.Platform.Serialization.csproj" />
   </ItemGroup>
 

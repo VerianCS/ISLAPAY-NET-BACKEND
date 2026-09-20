@@ -1,5 +1,7 @@
+using IslaPay.Platform.Data;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Hosting;
+using Npgsql;
 
 namespace IslaPay.Platform.AspNet;
 
@@ -46,4 +48,39 @@ public interface IReadinessCheck
     string Name { get; }
 
     Task<bool> IsReadyAsync(CancellationToken cancellationToken = default);
+}
+
+/// <summary>Whether the database is answering.</summary>
+/// <remarks>
+/// Platform-level rather than per module: every module shares the cluster, so
+/// one check reports it once instead of each module reporting the same outage
+/// under a different name.
+/// </remarks>
+internal sealed class DatabaseReadiness : IReadinessCheck
+{
+    private readonly IDatabase _database;
+
+    public DatabaseReadiness(IDatabase database)
+    {
+        ArgumentNullException.ThrowIfNull(database);
+        _database = database;
+    }
+
+    public string Name => "database";
+
+    public async Task<bool> IsReadyAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await using var connection = await _database.OpenAsync(cancellationToken)
+                .ConfigureAwait(false);
+            await using var command = new NpgsqlCommand("SELECT 1;", connection);
+            return (int?)await command.ExecuteScalarAsync(cancellationToken)
+                .ConfigureAwait(false) == 1;
+        }
+        catch (Exception e) when (e is NpgsqlException or TimeoutException)
+        {
+            return false;
+        }
+    }
 }

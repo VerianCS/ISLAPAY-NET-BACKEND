@@ -1,4 +1,5 @@
 using IslaPay.Identity;
+using IslaPay.Ledger;
 using IslaPay.Platform.AspNet;
 
 // The composition root, and nothing else.
@@ -24,11 +25,12 @@ builder.AddIslaPayPlatform(
         Authority = keycloak.Issuer,
         Audience = keycloak.Audience,
     },
-    new IdentityModule());
+    new IdentityModule(),
+    new LedgerModule());
 
 var app = builder.Build();
 
-app.UseIslaPayPlatform();
+await app.UseIslaPayPlatformAsync();
 
 await app.RunAsync();
 

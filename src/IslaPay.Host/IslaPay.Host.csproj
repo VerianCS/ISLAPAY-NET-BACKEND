@@ -15,6 +15,7 @@
       Adding a context means adding a line here and nothing else.
     -->
     <ProjectReference Include="..\Modules\Identity\IslaPay.Identity\IslaPay.Identity.csproj" />
+    <ProjectReference Include="..\Modules\Ledger\IslaPay.Ledger\IslaPay.Ledger.csproj" />
   </ItemGroup>
 
 </Project>

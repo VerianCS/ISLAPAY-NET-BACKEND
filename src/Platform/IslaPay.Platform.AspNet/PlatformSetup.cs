@@ -1,10 +1,12 @@
 using System.Text.Json;
 using IslaPay.Platform.Api;
+using IslaPay.Platform.Data;
 using IslaPay.Platform.Serialization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Tokens;
@@ -60,6 +62,15 @@ public static class PlatformSetup
 
         builder.Services.AddSingleton(TimeProvider.System);
 
+        // One database, one schema per module. The schemas are what make "one
+        // database per service" a later move rather than a rewrite: nothing
+        // reads across a schema boundary, so splitting the cluster is a
+        // connection string change.
+        var data = builder.Configuration.GetSection("Data").Get<DataOptions>() ?? new DataOptions();
+        builder.Services.AddSingleton(data);
+        builder.Services.AddSingleton<IDatabase, Database>();
+        builder.Services.AddSingleton<IReadinessCheck, DatabaseReadiness>();
+
         // The wire format comes from the platform, so a response from this
         // host and a response asserted in a module's contract test cannot be
         // serialised differently.
@@ -85,9 +96,22 @@ public static class PlatformSetup
     }
 
     /// <summary>Wires the pipeline and maps every registered module's routes.</summary>
-    public static WebApplication UseIslaPayPlatform(this WebApplication app)
+    public static async Task<WebApplication> UseIslaPayPlatformAsync(
+        this WebApplication app, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(app);
+
+        var data = app.Services.GetRequiredService<DataOptions>();
+        if (data.MigrateOnStartup)
+        {
+            // Before a single request is served: a module whose table does not
+            // exist yet must fail here, on startup, rather than on the first
+            // customer to touch it.
+            await Migrator.ApplyAsync(
+                app.Services.GetRequiredService<IDatabase>(),
+                [.. app.Services.GetServices<MigrationSet>()],
+                cancellationToken).ConfigureAwait(false);
+        }
 
         // First, so it also catches what an endpoint throws before any other
         // middleware has written to the response.

@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Money and nothing else. In particular not IslaPay.Ledger.Domain: a caller
+    must not be able to reach the ledger's internal types through its public
+    face, or the seam is decorative.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\Platform\IslaPay.Platform.Money\IslaPay.Platform.Money.csproj" />
+  </ItemGroup>
+
+</Project>

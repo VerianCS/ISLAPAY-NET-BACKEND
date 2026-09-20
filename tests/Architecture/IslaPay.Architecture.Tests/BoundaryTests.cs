@@ -137,11 +137,10 @@ public class BoundaryTests
     {
         // A module with no .Contracts assembly has no way to be integrated
         // with except through its internals, which is the failure this whole
-        // suite exists to prevent. Ledger is the deliberate exception, and it
-        // is named here so that the exception is a decision rather than an
-        // oversight: it is pure domain rules with no API surface yet, and the
-        // day it grows one it gets a .Contracts like everything else.
-        string[] knownExceptions = ["Ledger"];
+        // suite exists to prevent. There are no exceptions left: Ledger was
+        // one until it grew a caller, and growing a caller is exactly when the
+        // exception had to end.
+        string[] knownExceptions = [];
 
         var modules = Projects
             .Where(p => p.Module is not null && !p.IsTest)

@@ -43,11 +43,27 @@ jobs:
           --health-timeout 5s
           --health-retries 10
 
+      # The ledger's tests are about storage: the row locks, the append-only
+      # trigger, the gapless sequence. None of that exists outside Postgres, so
+      # none of it can be tested without one.
+      postgres:
+        image: postgres:16-alpine
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
     env:
       RABBITMQ_HOST: localhost
       KEYCLOAK_URL: http://localhost:8080
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin
+      POSTGRES_URL: "Host=localhost;Port=5432;Database=postgres;Username=postgres;Password=postgres"
 
     steps:
       - uses: actions/checkout@v4

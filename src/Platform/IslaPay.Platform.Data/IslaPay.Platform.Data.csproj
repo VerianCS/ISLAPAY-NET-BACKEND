@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Npgsql and nothing else. No ORM on purpose: see Database.cs — a ledger's
+    correctness lives in the isolation level and the row locks, and those have
+    to be visible in the code that relies on them.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Npgsql" Version="9.0.4" />
+  </ItemGroup>
+
+</Project>
