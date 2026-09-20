@@ -93,4 +93,25 @@ public interface ILedger
     /// </exception>
     Task<PostingReceipt> PostAsync(
         PostingRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The posting recorded under an idempotency key, if there is one.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// For callers that keep their own state alongside the ledger's and cannot
+    /// write both in one transaction — the ledger owns its transaction, and
+    /// handing it out would make every caller a Postgres caller and end any
+    /// hope of moving this module into its own process.
+    /// </para>
+    /// <para>
+    /// The window that opens instead is small and always the same shape: the
+    /// posting committed and the caller died before recording that it had. A
+    /// caller closes it by asking this before it acts, and healing its own
+    /// state to match the answer. Doing anything else — a refund, say, for a
+    /// hold that was in fact already released — is how money is created.
+    /// </para>
+    /// </remarks>
+    Task<Guid?> FindPostingAsync(
+        string idempotencyKey, CancellationToken cancellationToken = default);
 }

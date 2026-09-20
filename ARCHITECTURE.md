@@ -56,19 +56,35 @@ name.
 
 ## Data
 
-One Postgres cluster, one schema per context: `identity`, `ledger`, `wallet`,
-plus `platform` for the migration history and `messaging` for the outbox.
-Nothing reads across a schema boundary, which is what makes "one database per
-service" a connection string change later rather than a rewrite.
+One Postgres cluster, one schema per context: `identity`, `ledger`,
+`marketplace`, plus `platform` for the migration history and `messaging` for
+the outbox. Wallet owns no tables; its state is the ledger's. Nothing reads
+across a schema boundary, which is what makes "one database per service" a
+connection string change later rather than a rewrite.
 
 Migrations are plain `.sql` files embedded in the module that owns the schema,
 applied in name order and recorded with a checksum — editing an applied script
 is refused, because it leaves every existing environment on the old definition
-and every new one on the new.
+and every new one on the new. **This is true of every module, including the
+ones that use an ORM**: the schema is written by hand, and `dotnet ef` is not
+part of any workflow here.
 
-No ORM. A ledger's correctness lives in the isolation level and in which rows
-are locked, in what order, and those have to be visible in the code that
-depends on them.
+Access to those tables is split, deliberately:
+
+- **The ledger, the outbox and the idempotency store use Npgsql directly.**
+  Their correctness lives in the isolation level and in which rows are locked,
+  in what order — `FOR UPDATE` in a fixed sequence, `FOR UPDATE SKIP LOCKED`,
+  gapless per-account sequences, append-only triggers. Those have to be visible
+  in the code that depends on them, and an ORM's job is to hide them.
+- **Product modules use EF Core as a mapper.** Marketplace is the first.
+  Listings, orders, paging and projections are row-to-object tedium with no
+  concurrency subtlety of their own, and there are seven more modules like it
+  coming. Writing that by hand is several hundred lines per module that nobody
+  will read twice.
+
+A module that needs both does what Marketplace does: EF for the queries, and
+raw SQL through EF's `FromSql`/`ExecuteSql` for the statements where the lock
+is the point. The lock stays in the file you are reading.
 
 ## Events
 
@@ -84,19 +100,38 @@ so it is the same surface a network API would have.
 
 ## Current state
 
-Working end to end: registering a user creates the account in Keycloak, writes
-`user.registered.v1` to the outbox, publishes it, and Wallet opens the ledger
-accounts. `GET /v1/me/wallet` then returns balances, rates and history.
+Working end to end:
 
-Because Keycloak owns the account and this database cannot join the transaction
-that created it, that event can be lost. Wallet therefore also opens accounts
-on first read: the event is the fast path, the read is the guarantee. Both are
-tested, the second with the broker deliberately unreachable.
+- **Identity.** Register, sign in, refresh, sign out, prove a phone by OTP,
+  reset a password — against a real Keycloak. Registration writes
+  `user.registered.v1` to the outbox and Wallet opens the ledger accounts.
+  Because Keycloak owns the account and this database cannot join the
+  transaction that created it, that event can be lost, so Wallet also opens
+  accounts on first read: the event is the fast path, the read is the
+  guarantee. Both are tested, the second with the broker unreachable.
+- **Wallet.** `GET /v1/me/wallet`, `GET /v1/me/transactions`, and
+  `POST /v1/transfers` between two IslaPay accounts, with HTTP idempotency and
+  the verified-phone gate.
+- **Marketplace.** Publish an item, browse, and buy: the buyer's money moves
+  into escrow and a single-use code is issued to them. The seller scans it and
+  escrow pays out — the price less 1% commission. Either party can cancel, and
+  a hold nobody scans returns on its own after 72 hours.
+
+The marketplace is where the seam between a module's tables and the ledger's
+transaction had to be faced. The ledger owns its transaction and will not hand
+it out, so an order's status and the posting that moved its money are two
+commits. The order lifecycle therefore has in-flight statuses (`pending`,
+`releasing`, `refunding`) that say "a posting for this may exist", a sweeper
+that settles the question with `ILedger.FindPostingAsync`, and one idempotency
+key shared by the two ways an order can end, so that releasing to the seller
+and refunding to the buyer compete for the same unique index. Escrow is a
+platform account and may go negative: a second payout would not bounce, so
+nothing may depend on it not being attempted.
 
 Exchange and P2P are contracts only — the shapes are agreed in
 `API_CONTRACT.md`, nothing serves them yet. The rates in the wallet response
 are parity placeholders until Exchange exists, and say so in the code.
 
-No money moves yet: there is no transfer, conversion or payment endpoint. The
-ledger can post — with idempotency, row locks and an append-only history
-enforced by the database — but nothing calls it except its own tests.
+Money can move between accounts and through a sale. It cannot yet get in or
+out: there is no recharge, no deposit address and no payout. That is the next
+thing that matters, and it is integration work rather than code.

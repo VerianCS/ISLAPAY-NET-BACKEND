@@ -428,6 +428,20 @@ public sealed class PostgresLedger : ILedger
         return state;
     }
 
+    public Task<Guid?> FindPostingAsync(
+        string idempotencyKey, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(idempotencyKey);
+
+        // A transaction for a single read, so it goes through exactly the same
+        // statement the replay check uses. Two ways to ask the same question
+        // is two ways for the answers to drift apart.
+        return _database.InTransactionAsync(
+            (connection, transaction, ct) =>
+                ExistingPostingAsync(connection, transaction, idempotencyKey, ct),
+            cancellationToken: cancellationToken);
+    }
+
     private static async Task<Guid?> ExistingPostingAsync(
         NpgsqlConnection connection, NpgsqlTransaction transaction,
         string idempotencyKey, CancellationToken cancellationToken)

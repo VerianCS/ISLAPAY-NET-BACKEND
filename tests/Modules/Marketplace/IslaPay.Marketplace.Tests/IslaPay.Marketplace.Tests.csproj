@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+    <PackageReference Include="Xunit.SkippableFact" Version="1.5.85" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\..\src\Modules\Marketplace\IslaPay.Marketplace\IslaPay.Marketplace.csproj" />
+    <!--
+      The ledger only through its contract, which rule 6 requires and which
+      turns out to be what these tests want anyway: a fake ILedger can be made
+      to commit a posting and then fail, which is the exact crash the repair
+      logic exists for and which a real ledger will not perform on request.
+      The money itself is checked end to end, against the real one.
+    -->
+    <ProjectReference Include="..\..\..\Support\IslaPay.TestSupport\IslaPay.TestSupport.csproj" />
+  </ItemGroup>
+
+</Project>

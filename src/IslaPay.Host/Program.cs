@@ -1,5 +1,6 @@
 using IslaPay.Identity;
 using IslaPay.Ledger;
+using IslaPay.Marketplace;
 using IslaPay.Wallet;
 using IslaPay.Platform.AspNet;
 
@@ -28,7 +29,8 @@ builder.AddIslaPayPlatform(
     },
     new IdentityModule(),
     new LedgerModule(),
-    new WalletModule());
+    new WalletModule(),
+    new MarketplaceModule());
 
 var app = builder.Build();
 
