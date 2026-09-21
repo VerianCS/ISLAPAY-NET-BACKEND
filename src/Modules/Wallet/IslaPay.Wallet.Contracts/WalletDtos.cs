@@ -71,7 +71,7 @@ public sealed record TransactionDto(
 /// An e-mail for an internal transfer, or an on-chain address.
 /// </param>
 /// <param name="Network">
-/// Required when the currency is on-chain; ignored for USD. One of the five
+/// Required when the currency is on-chain; ignored for E-ISLA. One of the five
 /// networks in <c>API_CONTRACT.md</c> §2, sent verbatim.
 /// </param>
 /// <param name="Note">Optional free text the sender attaches.</param>

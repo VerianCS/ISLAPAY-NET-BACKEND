@@ -54,14 +54,14 @@ public class MarketplaceTests
         // While the code is unscanned the money is genuinely out of the
         // buyer's account. A reservation that left the balance alone would let
         // the same 60 be promised to three sellers.
-        Assert.Equal("10.00", (await UsdBalanceAsync(ledger, buyer.UserId)).ToString());
-        Assert.Equal("0.00", (await UsdBalanceAsync(ledger, seller.UserId)).ToString());
+        Assert.Equal("10.00", (await EIslaBalanceAsync(ledger, buyer.UserId)).ToString());
+        Assert.Equal("0.00", (await EIslaBalanceAsync(ledger, seller.UserId)).ToString());
 
         var released = await Read<OrderDto>(await RedeemAsync(host, seller, order.Code!));
 
         Assert.Equal(OrderStatuses.Released, released.Status);
-        Assert.Equal("10.00", (await UsdBalanceAsync(ledger, buyer.UserId)).ToString());
-        Assert.Equal("49.50", (await UsdBalanceAsync(ledger, seller.UserId)).ToString());
+        Assert.Equal("10.00", (await EIslaBalanceAsync(ledger, buyer.UserId)).ToString());
+        Assert.Equal("49.50", (await EIslaBalanceAsync(ledger, seller.UserId)).ToString());
     }
 
     [SkippableFact]
@@ -104,7 +104,7 @@ public class MarketplaceTests
 
         Assert.Equal(MarketplaceErrors.InsufficientFunds, problem.Code);
         Assert.NotNull(problem.Meta);
-        Assert.Equal("USD", problem.Meta!["currency"].ToString());
+        Assert.Equal("EISLA", problem.Meta!["currency"].ToString());
 
         var again = await Read<ListingDto>(await GetAsync(host, buyer, $"/v1/listings/{listing.Id}"));
         Assert.Equal(ListingStatuses.Active, again.Status);
@@ -130,7 +130,7 @@ public class MarketplaceTests
         Assert.Equal(first.Code, second.Code);
 
         var ledger = host.Services.GetRequiredService<ILedger>();
-        Assert.Equal("15.00", (await UsdBalanceAsync(ledger, buyer.UserId)).ToString());
+        Assert.Equal("15.00", (await EIslaBalanceAsync(ledger, buyer.UserId)).ToString());
     }
 
     [SkippableFact]
@@ -149,7 +149,7 @@ public class MarketplaceTests
         Assert.Equal(OrderStatuses.Cancelled, cancelled.Status);
 
         var ledger = host.Services.GetRequiredService<ILedger>();
-        Assert.Equal("40.00", (await UsdBalanceAsync(ledger, buyer.UserId)).ToString());
+        Assert.Equal("40.00", (await EIslaBalanceAsync(ledger, buyer.UserId)).ToString());
 
         var again = await Read<ListingDto>(await GetAsync(host, buyer, $"/v1/listings/{listing.Id}"));
         Assert.Equal(ListingStatuses.Active, again.Status);
@@ -195,8 +195,8 @@ public class MarketplaceTests
 
         // And no money moved anywhere.
         var ledger = host.Services.GetRequiredService<ILedger>();
-        Assert.Equal("0.00", (await UsdBalanceAsync(ledger, stranger.UserId)).ToString());
-        Assert.Equal("0.00", (await UsdBalanceAsync(ledger, seller.UserId)).ToString());
+        Assert.Equal("0.00", (await EIslaBalanceAsync(ledger, stranger.UserId)).ToString());
+        Assert.Equal("0.00", (await EIslaBalanceAsync(ledger, seller.UserId)).ToString());
     }
 
     [SkippableFact]
@@ -244,7 +244,7 @@ public class MarketplaceTests
 
         // The buyer sees the hold going out and nothing coming back.
         Assert.Contains(buyerWallet.Transactions.Items, t => t.Amount.ToString() == "-20.00");
-        Assert.Equal("20.00", (await UsdBalanceAsync(
+        Assert.Equal("20.00", (await EIslaBalanceAsync(
             host.Services.GetRequiredService<ILedger>(), buyer.UserId)).ToString());
     }
 
@@ -281,7 +281,7 @@ public class MarketplaceTests
         var order = await Read<OrderDto>(await PlaceOrderAsync(host, buyer, listing.Id));
 
         var ledger = host.Services.GetRequiredService<ILedger>();
-        Assert.Equal("22.00", (await UsdBalanceAsync(ledger, buyer.UserId)).ToString());
+        Assert.Equal("22.00", (await EIslaBalanceAsync(ledger, buyer.UserId)).ToString());
 
         // Rather than waiting 72 hours: move the deadline into the past and
         // run the same repair the hosted sweeper runs on its timer.
@@ -289,7 +289,7 @@ public class MarketplaceTests
         using var scope = host.Services.CreateScope();
         await scope.ServiceProvider.GetRequiredService<MarketplaceService>().RepairAsync();
 
-        Assert.Equal("40.00", (await UsdBalanceAsync(ledger, buyer.UserId)).ToString());
+        Assert.Equal("40.00", (await EIslaBalanceAsync(ledger, buyer.UserId)).ToString());
 
         var settled = await Read<OrderDto>(await GetAsync(host, buyer, $"/v1/orders/{order.Id}"));
         Assert.Equal(OrderStatuses.Expired, settled.Status);
@@ -315,7 +315,7 @@ public class MarketplaceTests
                 Description: "Poco uso",
                 Category: "Deportes",
                 Condition: "Como nuevo",
-                Price: Money.Parse(price, Currency.Usd),
+                Price: Money.Parse(price, Currency.EIsla),
                 Location: "Habana"),
             Json);
 
@@ -382,10 +382,10 @@ public class MarketplaceTests
             SELECT coalesce(sum(e.minor_units), 0)::bigint
             FROM ledger.entries e
             JOIN ledger.accounts a ON a.id = e.account_id
-            WHERE a.owner_type = 'platform' AND a.owner = 'escrow' AND e.currency = 'USD';
+            WHERE a.owner_type = 'platform' AND a.owner = 'escrow' AND e.currency = 'EISLA';
             """, connection);
 
-        return Money.FromMinorUnits((long)(await command.ExecuteScalarAsync())!, Currency.Usd);
+        return Money.FromMinorUnits((long)(await command.ExecuteScalarAsync())!, Currency.EIsla);
     }
 
     private static async Task<Account> RegisterAsync(IslaPayHost host)
@@ -425,7 +425,7 @@ public class MarketplaceTests
     private static async Task<Account> FundedUserAsync(IslaPayHost host, string amount)
     {
         var account = await VerifiedUserAsync(host);
-        var money = Money.Parse(amount, Currency.Usd);
+        var money = Money.Parse(amount, Currency.EIsla);
 
         // There is no deposit endpoint yet, so this posts a settlement against
         // the platform's float — the call a recharge will make when it exists.
@@ -433,8 +433,8 @@ public class MarketplaceTests
             Kind: "settlement",
             Legs:
             [
-                new PostingLeg(AccountRef.User(account.UserId, Currency.Usd), money),
-                new PostingLeg(AccountRef.CashFloat(Currency.Usd), -money),
+                new PostingLeg(AccountRef.User(account.UserId, Currency.EIsla), money),
+                new PostingLeg(AccountRef.CashFloat(Currency.EIsla), -money),
             ],
             Metadata: new Dictionary<string, string>(StringComparer.Ordinal) { ["method"] = "test" }));
 
@@ -446,7 +446,7 @@ public class MarketplaceTests
             new AuthenticationHeaderValue("Bearer", accessToken);
 
     /// <summary>
-    /// The account's USD balance, or zero if it has no USD account yet.
+    /// The account's E-ISLA balance, or zero if it has no E-ISLA account yet.
     /// </summary>
     /// <remarks>
     /// Zero rather than an exception: accounts are opened by the
@@ -454,11 +454,11 @@ public class MarketplaceTests
     /// in these tests has done neither until somebody pays them. "No account"
     /// and "an empty account" are the same answer to what this asks.
     /// </remarks>
-    private static async Task<Money> UsdBalanceAsync(ILedger ledger, string userId)
+    private static async Task<Money> EIslaBalanceAsync(ILedger ledger, string userId)
     {
         var balances = await ledger.BalancesAsync(userId);
-        return balances.FirstOrDefault(b => b.Currency == Currency.Usd)?.Balance
-            ?? Money.Zero(Currency.Usd);
+        return balances.FirstOrDefault(b => b.Currency == Currency.EIsla)?.Balance
+            ?? Money.Zero(Currency.EIsla);
     }
 
     private static async Task<T> Read<T>(HttpResponseMessage response)

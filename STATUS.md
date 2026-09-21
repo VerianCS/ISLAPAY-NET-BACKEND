@@ -16,14 +16,14 @@ Those are four different things and several modules are only the first two.
 | Module | Routes | Tables | Tests | State |
 |---|---|---|---|---|
 | Identity | 7 | — (Keycloak owns them) | 38 | **Works** |
-| Ledger | 0 | 4 | 25 + 15 domain | **Works**, no HTTP surface by design |
+| Ledger | 0 | 4 | 16 + 15 domain | **Works**, no HTTP surface by design |
 | Wallet | 3 | — (reads the ledger) | 8 | **Works** |
 | Marketplace | 10 | 2 | 23 | **Works** |
 | P2P | 12 | 3 | 33 | **Works** — needs an operator |
 | Exchange | 0 | 0 | 4 | Contracts only |
 
-Platform: Api (4 tests), Data, Messaging (8), Money (52), AspNet, Serialization.
-End to end: 44. Architecture: 8. **249 in total**, against real Postgres,
+Platform: Api (4 tests), Data, Messaging (8), Money (54), AspNet, Serialization.
+End to end: 45. Architecture: 8. **256 in total**, against real Postgres,
 RabbitMQ and Keycloak.
 
 What the whole thing can now do that it could not: **pay money out and take it
@@ -85,6 +85,39 @@ payment processor needs (they settle at T+1 and can reverse).
 
 ---
 
+## E-ISLA — the internal unit, renamed
+
+`Currency.Usd` is now `Currency.EIsla`, code `EISLA`, two decimals. It is the
+same unit it always was: an internal liability of IslaPay, on no chain,
+redeemable one for one against a stablecoin subject to the fund having it. What
+changed is that it no longer claims to be a US dollar on every screen. The
+client's mock backend had said as much for months — *"the wallet settles it on
+the IslaPay (ISLA, 1:1 USD) balance"* — so this makes the server agree with
+what the app was already describing.
+
+Two migrations do the data, `ledger/002_eisla.sql` and `p2p/002_eisla.sql`.
+The first is the interesting one: `ledger.entries` is append-only by trigger,
+and a rename cannot be done by posting a reverse. The script drops the trigger,
+rewrites the label, puts the trigger back, and then refuses to finish if either
+a `USD` row survived or the trigger did not come back. Four tests in
+`EIslaRenameTests` run the shipped script over rows that really are in USD —
+every other test here runs against a database created a moment earlier, where
+it would sail over empty tables and prove only that it parses.
+
+The old code is **rejected on the wire**, not aliased. A body still saying
+`USD` comes back `400 malformed_request`, and there is an end-to-end test
+holding that open.
+
+Fixing that test found something else, which was not this change's fault but
+was in its way: a malformed body did not produce an `ApiProblem` at all. The
+platform caught `JsonException`, but minimal-API parameter binding wraps the
+converter's exception in `BadHttpRequestException` before it gets there, so the
+response was `text/plain` with a .NET stack trace in it — unparseable by the
+client, and a description of the server's internals to anybody who sent a bad
+body. Both are caught now.
+
+---
+
 ## Wallet — works
 
 `GET /v1/me/wallet`, `GET /v1/me/transactions`, `POST /v1/transfers`.
@@ -100,8 +133,8 @@ database cannot join the transaction that created it. Both are tested, the
 second with the broker deliberately unreachable.
 
 **Not real yet:** the exchange rates in the wallet response are hard-coded
-parity for three dollar-denominated instruments. It says so in the code. They
-become a call to Exchange the day Exchange exists.
+parity for the three currencies a customer can hold. It says so in the code.
+They become a call to Exchange the day Exchange exists.
 
 It publishes `transfer.completed.v1`. **Nothing consumes it** — see Messaging
 below.
@@ -177,7 +210,8 @@ balances on its own. That is what `Currency.Cup` was added for: the obligation
 to send somebody pesos is a liability, and a liability belongs in the ledger
 rather than in a column somewhere. No customer holds a CUP balance and none
 ever will — it is absent from `WalletService.OpenedOnRegistration` and
-`IsCustomerHoldable` says so.
+`IsCustomerHoldable` says so. CUP is also confined to this module: the exchange
+and custody, when they arrive, hold escrow in E-ISLA, USDC and USDT only.
 
 **Owns three tables.** `methods` (rails), `rates` (appended, never updated, so
 a trade settled last Tuesday is still explicable at the price it was given)

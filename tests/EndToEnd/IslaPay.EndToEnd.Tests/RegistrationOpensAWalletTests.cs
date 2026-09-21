@@ -99,7 +99,7 @@ public class RegistrationOpensAWalletTests
         var wallet = JsonSerializer.Deserialize<WalletResponse>(body, Json)!;
 
         Assert.Equal(
-            ["USD", "USDC", "USDT"],
+            ["EISLA", "USDC", "USDT"],
             wallet.Accounts.Select(a => a.Currency).Order(StringComparer.Ordinal));
 
         // Money is an object with a string amount, never a bare number — the

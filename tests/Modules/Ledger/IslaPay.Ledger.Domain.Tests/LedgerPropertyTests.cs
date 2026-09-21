@@ -17,7 +17,7 @@ namespace IslaPay.Ledger.Domain.Tests;
 public class LedgerPropertyTests
 {
     private static readonly Gen<Currency> AnyCurrency =
-        Gen.OneOfConst(Currency.Usd, Currency.Usdc, Currency.Usdt);
+        Gen.OneOfConst(Currency.EIsla, Currency.Usdc, Currency.Usdt);
 
     /// <summary>Amounts up to ~10,000 units, never zero.</summary>
     private static Gen<Money> AmountIn(Currency currency) =>
@@ -142,7 +142,7 @@ public class LedgerPropertyTests
         // Atomicity. A posting that overdraws on its third leg must not have
         // written the first two — otherwise the ledger holds a state no rule
         // allows and the next reconciliation is the first anyone hears of it.
-        Gen.Select(AnyCurrency, AmountIn(Currency.Usd))
+        Gen.Select(AnyCurrency, AmountIn(Currency.EIsla))
             .Sample((currency, _) =>
             {
                 var ledger = new Ledger();
@@ -286,7 +286,7 @@ public class LedgerPropertyTests
     [Fact]
     public void A_conversion_balances_in_both_currencies_at_any_amount()
     {
-        Gen.Select(AmountIn(Currency.Usd), Gen.OneOfConst(Currency.Usdc, Currency.Usdt))
+        Gen.Select(AmountIn(Currency.EIsla), Gen.OneOfConst(Currency.Usdc, Currency.Usdt))
             .Sample((amount, to) =>
             {
                 var posting = Conversions.BuildConversion(
@@ -305,7 +305,7 @@ public class LedgerPropertyTests
     [Fact]
     public void A_conversion_fee_is_never_more_than_the_amount_converted()
     {
-        Gen.Select(AmountIn(Currency.Usd), Gen.OneOfConst(Currency.Usdc, Currency.Usdt))
+        Gen.Select(AmountIn(Currency.EIsla), Gen.OneOfConst(Currency.Usdc, Currency.Usdt))
             .Sample((amount, to) =>
             {
                 var posting = Conversions.BuildConversion(
@@ -339,7 +339,7 @@ public class LedgerPropertyTests
 /// </summary>
 /// <remarks>
 /// Found by the property test above, which is what property tests are for: one
-/// per cent of twelve cents is a hundredth of a cent, USD is accounted in
+/// per cent of twelve cents is a hundredth of a cent, E-ISLA is accounted in
 /// cents, and a fee that cannot be charged was being posted as a zero leg —
 /// which the domain refuses, so the conversion threw instead of happening.
 /// These pin the answer so the next person to touch rounding finds out at
@@ -354,11 +354,11 @@ public class RoundingToNothingTests
     public void A_conversion_whose_fee_rounds_to_zero_still_happens(string amount)
     {
         var posting = Conversions.BuildConversion(
-            Guid.NewGuid(), "u1", Money.Parse(amount, Currency.Usd),
+            Guid.NewGuid(), "u1", Money.Parse(amount, Currency.EIsla),
             Currency.Usdt, "1.0000", DateTimeOffset.UtcNow);
 
         // No fee leg at all, rather than one that moves nothing.
-        Assert.DoesNotContain(posting.Legs, l => l.Account == AccountId.Fees(Currency.Usd));
+        Assert.DoesNotContain(posting.Legs, l => l.Account == AccountId.Fees(Currency.EIsla));
         Assert.All(posting.Legs, l => Assert.NotEqual(0, l.Amount.MinorUnits));
 
         // And it still balances in both currencies, which is the only thing
@@ -375,9 +375,9 @@ public class RoundingToNothingTests
     public void A_p2p_sale_whose_fee_rounds_to_zero_still_happens()
     {
         var posting = Conversions.BuildP2PSale(
-            Guid.NewGuid(), "u1", Money.Parse("0.12", Currency.Usd), DateTimeOffset.UtcNow);
+            Guid.NewGuid(), "u1", Money.Parse("0.12", Currency.EIsla), DateTimeOffset.UtcNow);
 
-        Assert.DoesNotContain(posting.Legs, l => l.Account == AccountId.Fees(Currency.Usd));
+        Assert.DoesNotContain(posting.Legs, l => l.Account == AccountId.Fees(Currency.EIsla));
         Assert.Equal(0, posting.Legs.Sum(l => l.Amount.MinorUnits));
     }
 
@@ -386,10 +386,10 @@ public class RoundingToNothingTests
     {
         // The guard above must not have quietly made every conversion free.
         var posting = Conversions.BuildConversion(
-            Guid.NewGuid(), "u1", Money.Parse("100.00", Currency.Usd),
+            Guid.NewGuid(), "u1", Money.Parse("100.00", Currency.EIsla),
             Currency.Usdt, "1.0000", DateTimeOffset.UtcNow);
 
-        var fee = posting.Legs.Single(l => l.Account == AccountId.Fees(Currency.Usd));
+        var fee = posting.Legs.Single(l => l.Account == AccountId.Fees(Currency.EIsla));
         Assert.Equal("1.00", fee.Amount.ToString());
     }
 }

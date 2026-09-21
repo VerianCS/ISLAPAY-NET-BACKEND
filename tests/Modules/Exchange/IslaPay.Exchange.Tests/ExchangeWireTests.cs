@@ -14,10 +14,10 @@ public class ExchangeWireTests
     {
         var quote = new QuoteResponse(
             QuoteId: "01JQ",
-            From: "USD",
+            From: "EISLA",
             To: "USDT",
-            Amount: Money.Parse("100.00", Currency.Usd),
-            Fee: Money.Parse("1.00", Currency.Usd),
+            Amount: Money.Parse("100.00", Currency.EIsla),
+            Fee: Money.Parse("1.00", Currency.EIsla),
             Received: Money.Parse("99.00", Currency.Usdt),
             Rate: "1.0000",
             ExpiresAt: new DateTimeOffset(2026, 9, 17, 10, 0, 30, TimeSpan.Zero),
@@ -29,7 +29,7 @@ public class ExchangeWireTests
         Assert.Contains("\"executable\":false", json, StringComparison.Ordinal);
         Assert.Contains("\"reason\":\"fund_unavailable\"", json, StringComparison.Ordinal);
         // The fee is in the source currency, what lands is in the target.
-        Assert.Contains("\"fee\":{\"amount\":\"1.00\",\"currency\":\"USD\"}", json, StringComparison.Ordinal);
+        Assert.Contains("\"fee\":{\"amount\":\"1.00\",\"currency\":\"EISLA\"}", json, StringComparison.Ordinal);
         Assert.Contains("\"received\":{\"amount\":\"99.000000\",\"currency\":\"USDT\"}", json, StringComparison.Ordinal);
     }
 
@@ -37,9 +37,9 @@ public class ExchangeWireTests
     public void An_executable_quote_omits_the_reason()
     {
         var quote = new QuoteResponse(
-            "01JQ", "USD", "USDT",
-            Money.Parse("100.00", Currency.Usd),
-            Money.Parse("1.00", Currency.Usd),
+            "01JQ", "EISLA", "USDT",
+            Money.Parse("100.00", Currency.EIsla),
+            Money.Parse("1.00", Currency.EIsla),
             Money.Parse("99.00", Currency.Usdt),
             "1.0000",
             new DateTimeOffset(2026, 9, 17, 10, 0, 30, TimeSpan.Zero),

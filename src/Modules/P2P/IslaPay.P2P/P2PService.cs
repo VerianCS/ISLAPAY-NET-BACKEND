@@ -1027,12 +1027,12 @@ public sealed class P2PService
     /// crosses the currency boundary differs by side, and it has to:
     /// <list type="bullet">
     /// <item><description>
-    /// Selling 100 USD at 120: IslaPay keeps 1 USD and converts the remaining
+    /// Selling 100 E-ISLA at 120: IslaPay keeps 1 and converts the remaining
     /// 99, so the user receives 11,880 CUP.
     /// </description></item>
     /// <item><description>
-    /// Buying with a 100 USD gross at 120: the user sends 12,000 CUP, which is
-    /// worth 100 USD, and IslaPay takes its 1 USD from that before crediting
+    /// Buying with a 100 E-ISLA gross at 120: the user sends 12,000 CUP, which is
+    /// worth 100 E-ISLA, and IslaPay takes 1 of them before crediting
     /// 99.
     /// </description></item>
     /// </list>

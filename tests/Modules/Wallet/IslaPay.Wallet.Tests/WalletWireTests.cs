@@ -21,7 +21,7 @@ public class WalletWireTests
         var response = new WalletResponse(
             Accounts:
             [
-                new AccountDto("USD", Money.Parse("1250.00", Currency.Usd), "4587"),
+                new AccountDto("EISLA", Money.Parse("1250.00", Currency.EIsla), "4587"),
             ],
             Rates: new Dictionary<string, string> { ["USD_USDT"] = "1.0000" },
             Transactions: new CursorPage<TransactionDto>(
@@ -40,7 +40,7 @@ public class WalletWireTests
 
         Assert.Equal(
             """
-            {"accounts":[{"currency":"USD","balance":{"amount":"1250.00","currency":"USD"},"cardLast4":"4587"}],"rates":{"USD_USDT":"1.0000"},"transactions":{"items":[{"id":"01JQ","type":"store_purchase","meta":{"merchant":"Tienda Solar"},"amount":{"amount":"-350.000000","currency":"USDT"},"occurredAt":"2026-09-16T14:42:00.000Z"}],"nextCursor":"eyJ"}}
+            {"accounts":[{"currency":"EISLA","balance":{"amount":"1250.00","currency":"EISLA"},"cardLast4":"4587"}],"rates":{"USD_USDT":"1.0000"},"transactions":{"items":[{"id":"01JQ","type":"store_purchase","meta":{"merchant":"Tienda Solar"},"amount":{"amount":"-350.000000","currency":"USDT"},"occurredAt":"2026-09-16T14:42:00.000Z"}],"nextCursor":"eyJ"}}
             """,
             json);
     }
@@ -49,7 +49,7 @@ public class WalletWireTests
     public void Money_never_appears_as_a_bare_number()
     {
         var json = JsonSerializer.Serialize(
-            new RechargeRequest(Money.Parse("50.00", Currency.Usd), "zelle"), Json);
+            new RechargeRequest(Money.Parse("50.00", Currency.EIsla), "zelle"), Json);
 
         Assert.Contains("\"amount\":\"50.00\"", json, StringComparison.Ordinal);
         Assert.DoesNotContain("\"amount\":50", json, StringComparison.Ordinal);
@@ -61,7 +61,7 @@ public class WalletWireTests
         var entry = new TransactionDto(
             "1", LedgerEntryTypes.Recharge,
             new Dictionary<string, string> { ["method"] = "zelle" },
-            Money.Parse("10.00", Currency.Usd),
+            Money.Parse("10.00", Currency.EIsla),
             new DateTimeOffset(2026, 1, 2, 3, 4, 5, TimeSpan.FromHours(-5)));
 
         var json = JsonSerializer.Serialize(entry, Json);
@@ -93,7 +93,7 @@ public class WalletForwardCompatibilityTests
         // The server is ahead of this build, mid rolling deploy.
         var dto = JsonSerializer.Deserialize<AccountDto>(
             """
-            {"currency":"USD","balance":{"amount":"1.00","currency":"USD"},
+            {"currency":"EISLA","balance":{"amount":"1.00","currency":"EISLA"},
              "cardLast4":"0001","frozen":true,"openedAt":"2026-01-01T00:00:00.000Z"}
             """, Json);
 
@@ -109,7 +109,7 @@ public class WalletForwardCompatibilityTests
         var dto = JsonSerializer.Deserialize<TransactionDto>(
             """
             {"id":"1","type":"payroll_credit","meta":{"employer":"ACME"},
-             "amount":{"amount":"500.00","currency":"USD"},
+             "amount":{"amount":"500.00","currency":"EISLA"},
              "occurredAt":"2026-09-16T14:42:00.000Z"}
             """, Json);
 

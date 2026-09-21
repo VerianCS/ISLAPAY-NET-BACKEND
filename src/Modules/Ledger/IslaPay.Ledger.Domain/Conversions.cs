@@ -43,7 +43,7 @@ public static class Conversions
     /// </summary>
     /// <remarks>
     /// The fee is taken in the source currency, which is what the client shows
-    /// ("Comisión (1%, en USD)"). Both currencies balance independently.
+    /// ("Comisión (1%, en E-ISLA)"). Both currencies balance independently.
     /// <para>
     /// Whether the fund can cover the destination leg is not decided here —
     /// <see cref="Ledger.Post"/> rejects the posting if it cannot, and that is
@@ -86,7 +86,7 @@ public static class Conversions
 
         // The fee leg is omitted when the fee rounds to nothing.
         //
-        // One per cent of twelve cents is a hundredth of a cent, and USD is
+        // One per cent of twelve cents is a hundredth of a cent, and E-ISLA is
         // accounted in cents: there is no way to charge it, so nothing is
         // charged. Posting a zero leg instead is not an option — a leg that
         // moves nothing is refused by the domain, which turned a conversion of

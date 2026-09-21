@@ -54,8 +54,8 @@ public class TransferTests
         Assert.Equal(recipient.Email, movement.Meta["to"]);
 
         var ledger = host.Services.GetRequiredService<ILedger>();
-        Assert.Equal("25.00", (await UsdBalanceAsync(ledger, sender.UserId)).ToString());
-        Assert.Equal("15.00", (await UsdBalanceAsync(ledger, recipient.UserId)).ToString());
+        Assert.Equal("25.00", (await EIslaBalanceAsync(ledger, sender.UserId)).ToString());
+        Assert.Equal("15.00", (await EIslaBalanceAsync(ledger, recipient.UserId)).ToString());
     }
 
     [SkippableFact]
@@ -102,12 +102,12 @@ public class TransferTests
         // The client models this as InsufficientFunds(currency); without the
         // meta it cannot build the failure it is supposed to show.
         Assert.NotNull(problem.Meta);
-        Assert.Equal("USD", problem.Meta!["currency"].ToString());
+        Assert.Equal("EISLA", problem.Meta!["currency"].ToString());
         Assert.Equal("10.00", problem.Meta["available"].ToString());
 
         // And nothing moved.
         var ledger = host.Services.GetRequiredService<ILedger>();
-        Assert.Equal("10.00", (await UsdBalanceAsync(ledger, sender.UserId)).ToString());
+        Assert.Equal("10.00", (await EIslaBalanceAsync(ledger, sender.UserId)).ToString());
     }
 
     [SkippableFact]
@@ -222,8 +222,8 @@ public class TransferTests
             await second.Content.ReadAsStringAsync());
 
         var ledger = host.Services.GetRequiredService<ILedger>();
-        Assert.Equal("18.00", (await UsdBalanceAsync(ledger, sender.UserId)).ToString());
-        Assert.Equal("12.00", (await UsdBalanceAsync(ledger, recipient.UserId)).ToString());
+        Assert.Equal("18.00", (await EIslaBalanceAsync(ledger, sender.UserId)).ToString());
+        Assert.Equal("12.00", (await EIslaBalanceAsync(ledger, recipient.UserId)).ToString());
     }
 
     [SkippableFact]
@@ -248,7 +248,7 @@ public class TransferTests
             PlatformErrors.IdempotencyKeyReuse, (await Read<ApiProblem>(response)).Code);
 
         var ledger = host.Services.GetRequiredService<ILedger>();
-        Assert.Equal("25.00", (await UsdBalanceAsync(ledger, sender.UserId)).ToString());
+        Assert.Equal("25.00", (await EIslaBalanceAsync(ledger, sender.UserId)).ToString());
     }
 
     [SkippableFact]
@@ -287,12 +287,64 @@ public class TransferTests
 
         var response = await client.PostAsJsonAsync(
             "/v1/transfers",
-            new TransferRequest(Money.Parse("1.00", Currency.Usd), recipient.Email),
+            new TransferRequest(Money.Parse("1.00", Currency.EIsla), recipient.Email),
             Json);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Equal(
             PlatformErrors.MalformedRequest, (await Read<ApiProblem>(response)).Code);
+    }
+
+    /// <summary>
+    /// A body still denominated in <c>USD</c>, as a client built before the
+    /// E-ISLA rename would send it.
+    /// </summary>
+    /// <remarks>
+    /// Taking the old code as an alias would keep that client working while it
+    /// told somebody they hold US dollars, which IslaPay does not issue. So it
+    /// is refused at the edge, before anything reads an amount, and this test
+    /// is what makes that a decision rather than an oversight.
+    /// </remarks>
+    [SkippableFact]
+    public async Task A_transfer_still_denominated_in_the_old_code_is_refused()
+    {
+        Skip.IfNot(_fixture.Available, "No Keycloak or no Postgres reachable.");
+
+        await using var host = _fixture.Build();
+        var sender = await FundedUserAsync(host, "10.00");
+        var recipient = await VerifiedUserAsync(host);
+
+        using var client = host.CreateClient();
+        Authorize(client, sender.AccessToken);
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/transfers")
+        {
+            Content = new StringContent(
+                $$"""
+                  {
+                    "amount": { "amount": "1.00", "currency": "USD" },
+                    "destination": "{{recipient.Email}}"
+                  }
+                  """,
+                Encoding.UTF8,
+                "application/json"),
+        };
+        request.Headers.Add(IdempotencyMiddleware.HeaderName, Guid.NewGuid().ToString("N"));
+
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        // A structured problem, not a stack trace: the client parses this
+        // shape and nothing else, and a body it cannot read is an error it
+        // cannot show.
+        Assert.Equal(
+            "application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal(
+            PlatformErrors.MalformedRequest, (await Read<ApiProblem>(response)).Code);
+
+        var ledger = host.Services.GetRequiredService<ILedger>();
+        Assert.Equal("10.00", (await EIslaBalanceAsync(ledger, sender.UserId)).ToString());
     }
 
     [SkippableFact]
@@ -314,7 +366,7 @@ public class TransferTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         var ledger = host.Services.GetRequiredService<ILedger>();
-        Assert.Equal("7.00", (await UsdBalanceAsync(ledger, recipient.UserId)).ToString());
+        Assert.Equal("7.00", (await EIslaBalanceAsync(ledger, recipient.UserId)).ToString());
     }
 
     // ------------------------------------------------------------------ the event
@@ -422,13 +474,13 @@ public class TransferTests
     /// </remarks>
     private static async Task FundAsync(IslaPayHost host, string userId, string amount)
     {
-        var money = Money.Parse(amount, Currency.Usd);
+        var money = Money.Parse(amount, Currency.EIsla);
         await host.Services.GetRequiredService<ILedger>().PostAsync(new PostingRequest(
             Kind: "settlement",
             Legs:
             [
-                new PostingLeg(AccountRef.User(userId, Currency.Usd), money),
-                new PostingLeg(AccountRef.CashFloat(Currency.Usd), -money),
+                new PostingLeg(AccountRef.User(userId, Currency.EIsla), money),
+                new PostingLeg(AccountRef.CashFloat(Currency.EIsla), -money),
             ],
             Metadata: new Dictionary<string, string>(StringComparer.Ordinal)
             {
@@ -446,7 +498,7 @@ public class TransferTests
         {
             Content = new StringContent(
                 JsonSerializer.Serialize(
-                    new TransferRequest(Money.Parse(amount, Currency.Usd), destination), Json),
+                    new TransferRequest(Money.Parse(amount, Currency.EIsla), destination), Json),
                 Encoding.UTF8,
                 "application/json"),
         };
@@ -460,8 +512,8 @@ public class TransferTests
         client.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", accessToken);
 
-    private static async Task<Money> UsdBalanceAsync(ILedger ledger, string userId) =>
-        (await ledger.BalancesAsync(userId)).Single(b => b.Currency == Currency.Usd).Balance;
+    private static async Task<Money> EIslaBalanceAsync(ILedger ledger, string userId) =>
+        (await ledger.BalancesAsync(userId)).Single(b => b.Currency == Currency.EIsla).Balance;
 
     private static async Task<T> Read<T>(HttpResponseMessage response)
     {

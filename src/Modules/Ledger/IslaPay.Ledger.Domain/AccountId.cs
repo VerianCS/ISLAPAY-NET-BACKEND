@@ -31,7 +31,7 @@ public enum AccountType
 }
 
 /// <summary>
-/// An account in the ledger, named as in §8.4: <c>user:42:USD</c>,
+/// An account in the ledger, named as in §8.4: <c>user:42:EISLA</c>,
 /// <c>platform:fees:USD</c>, <c>external:chain:USDT</c>.
 /// </summary>
 /// <remarks>

@@ -40,8 +40,8 @@ public class P2PWireTests
         var method = new P2PMethodDto(
             "cup_tm", "CUP Transfermóvil", "CUP",
             SellRate: "380", BuyRate: "390", Available: true,
-            Minimum: Money.Parse("5.00", Currency.Usd),
-            Maximum: Money.Parse("500.00", Currency.Usd));
+            Minimum: Money.Parse("5.00", Currency.EIsla),
+            Maximum: Money.Parse("500.00", Currency.EIsla));
 
         var json = JsonSerializer.Serialize(method, Json);
 
@@ -59,7 +59,7 @@ public class P2PWireTests
         // A client that does not is filled at whatever is current, so the
         // field must not appear when it was not supplied.
         var json = JsonSerializer.Serialize(
-            new P2PTradeRequest(P2PSide.Buy, Money.Parse("10.00", Currency.Usd), "cup_tm"),
+            new P2PTradeRequest(P2PSide.Buy, Money.Parse("10.00", Currency.EIsla), "cup_tm"),
             Json);
 
         Assert.DoesNotContain("quotedRate", json, StringComparison.Ordinal);

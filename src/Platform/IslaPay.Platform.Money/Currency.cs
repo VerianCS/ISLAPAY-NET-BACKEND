@@ -4,21 +4,29 @@ namespace IslaPay.Platform;
 /// The currencies IslaPay holds.
 /// </summary>
 /// <remarks>
-/// The first three mirror the client's <c>Currency</c> enum — see
-/// <c>API_CONTRACT.md</c> §2 in the Flutter repository — and are the ones a
-/// customer can hold a balance in.
 /// <para>
-/// <see cref="Cup"/> is not one of them. No user account is ever opened in it:
+/// <see cref="EIsla"/> is the application's own unit and the one a balance is
+/// usually quoted in. It is not a token and it is not on a chain: it is a
+/// liability of IslaPay, redeemable one for one against a stablecoin subject
+/// to the settlement fund having it. It is only ever issued by converting a
+/// deposit, by a P2P purchase, or by a treasury credit an operator signs for —
+/// never by anything a customer can call.
+/// </para>
+/// <para>
+/// <see cref="Cup"/> is the odd one out. No user account is ever opened in it:
 /// it is the platform's own currency for the local leg of a P2P trade, held by
 /// the settlement fund and owed through escrow until an operator pays it out.
 /// A customer sees an amount in CUP; they never have a balance in it, which is
-/// why it is absent from <c>WalletService.OpenedOnRegistration</c>.
+/// why it is absent from <c>WalletService.OpenedOnRegistration</c>. It belongs
+/// to P2P alone — the exchange and custody never touch it.
 /// </para>
 /// </remarks>
 public enum Currency
 {
-    /// <summary>Internal account. Not on any chain.</summary>
-    Usd,
+    /// <summary>
+    /// E-ISLA, the application's unit of account. Internal, not on any chain.
+    /// </summary>
+    EIsla,
 
     /// <summary>USD Coin. On-chain, so it carries a network.</summary>
     Usdc,
@@ -39,9 +47,16 @@ public static class CurrencyExtensions
     /// <see cref="Money"/> can be an integer: a balance is always a whole
     /// number of these units, never a fraction of one.
     /// </summary>
+    /// <remarks>
+    /// E-ISLA is accounted in hundredths because it is redeemable one for one
+    /// against a dollar-denominated stablecoin and a unit a customer cannot be
+    /// shown is a unit that gets lost in rounding. The stablecoins keep their
+    /// own six, which is what their contracts use; converting between the two
+    /// scales is <see cref="Money.ConvertTo"/>'s problem, not this one's.
+    /// </remarks>
     public static int Scale(this Currency currency) => currency switch
     {
-        Currency.Usd => 2,
+        Currency.EIsla => 2,
         Currency.Usdc => 6,
         Currency.Usdt => 6,
         Currency.Cup => 2,
@@ -51,7 +66,7 @@ public static class CurrencyExtensions
     /// <summary>The code used on the wire and in the UI.</summary>
     public static string Code(this Currency currency) => currency switch
     {
-        Currency.Usd => "USD",
+        Currency.EIsla => "EISLA",
         Currency.Usdc => "USDC",
         Currency.Usdt => "USDT",
         Currency.Cup => "CUP",
@@ -63,9 +78,9 @@ public static class CurrencyExtensions
     /// </summary>
     /// <remarks>
     /// Named rather than negated. This used to read <c>!= Usd</c>, which was
-    /// true of everything that was not USD and became wrong the moment a
-    /// second off-chain currency existed — CUP moves through a Cuban bank, not
-    /// a blockchain.
+    /// true of everything that was not the internal unit and became wrong the
+    /// moment a second off-chain currency existed — CUP moves through a Cuban
+    /// bank, not a blockchain, and E-ISLA moves nowhere at all.
     /// </remarks>
     public static bool IsOnChain(this Currency currency) =>
         currency is Currency.Usdc or Currency.Usdt;
@@ -84,11 +99,18 @@ public static class CurrencyExtensions
     /// Parses a wire code. Case-insensitive, because a code that differs only
     /// in case is a client formatting quirk, not a different currency.
     /// </summary>
+    /// <remarks>
+    /// <c>USD</c> is deliberately not accepted. It was this enum's first member
+    /// and it named the same internal unit E-ISLA names now, so taking it as an
+    /// alias would look kind; it would also mean a client built against the old
+    /// contract keeps working while showing people a currency IslaPay does not
+    /// issue. A rejected code is a bug report. A silently accepted one is not.
+    /// </remarks>
     public static bool TryParseCode(string? code, out Currency currency)
     {
         switch (code?.Trim().ToUpperInvariant())
         {
-            case "USD": currency = Currency.Usd; return true;
+            case "EISLA": currency = Currency.EIsla; return true;
             case "USDC": currency = Currency.Usdc; return true;
             case "USDT": currency = Currency.Usdt; return true;
             case "CUP": currency = Currency.Cup; return true;

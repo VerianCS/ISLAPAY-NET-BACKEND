@@ -168,10 +168,20 @@ public static class PlatformSetup
                 if (context.Response.HasStarted) throw;
                 await ProblemResults.WriteAsync(context, failure, e.Message);
             }
-            catch (JsonException)
+            catch (Exception e) when (e is JsonException or BadHttpRequestException)
             {
                 // A malformed body is the caller's problem, not a 500. Nothing
                 // from the exception is echoed: it can quote the request.
+                //
+                // Both, because which one arrives depends on where the body is
+                // read. A converter that throws inside an endpoint raises
+                // `JsonException`; the same converter throwing while minimal
+                // APIs bind the parameter is wrapped in
+                // `BadHttpRequestException` before it ever reaches here. Only
+                // catching the first left the second to the developer
+                // exception page, which answers `text/plain` with a stack
+                // trace — unparseable by the client, and a description of the
+                // server's internals to anyone who sends a bad body.
                 if (context.Response.HasStarted) throw;
                 await ProblemResults.WriteAsync(
                     context, PlatformErrors.MalformedRequest, StatusCodes.Status400BadRequest,

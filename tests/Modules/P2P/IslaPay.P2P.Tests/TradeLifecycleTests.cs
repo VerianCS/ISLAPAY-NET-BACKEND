@@ -28,7 +28,7 @@ public sealed class TradeLifecycleTests : IAsyncLifetime
 
     public Task DisposeAsync() => Task.CompletedTask;
 
-    private static Money Usd(string amount) => Money.Parse(amount, Currency.Usd);
+    private static Money EIsla(string amount) => Money.Parse(amount, Currency.EIsla);
 
     private static Money Cup(string amount) => Money.Parse(amount, Currency.Cup);
 
@@ -41,7 +41,7 @@ public sealed class TradeLifecycleTests : IAsyncLifetime
     /// </summary>
     private async Task<World> SetUpAsync(
         string sellRate = "120", string buyRate = "125",
-        string fundCup = "1000000.00", string fundUsd = "10000.00",
+        string fundCup = "1000000.00", string fundEIsla = "10000.00",
         P2POptions? options = null, bool verified = true)
     {
         Skip.IfNot(_fixture.Available, "Postgres is not reachable.");
@@ -52,14 +52,14 @@ public sealed class TradeLifecycleTests : IAsyncLifetime
 
         var ledger = new FakeLedger();
         ledger.Fund(AccountRef.SettlementFund(Currency.Cup), Cup(fundCup));
-        ledger.Fund(AccountRef.SettlementFund(Currency.Usd), Usd(fundUsd));
+        ledger.Fund(AccountRef.SettlementFund(Currency.EIsla), EIsla(fundEIsla));
 
         var clock = new FakeClock(DateTimeOffset.Parse("2026-02-01T10:00:00Z", null));
         options ??= new P2POptions();
         var service = _fixture.Service(ledger, directory, options, clock);
 
-        await service.SetRateAsync("op", new P2PRateUpdate(Rail, P2PSide.Sell, "USD", sellRate));
-        await service.SetRateAsync("op", new P2PRateUpdate(Rail, P2PSide.Buy, "USD", buyRate));
+        await service.SetRateAsync("op", new P2PRateUpdate(Rail, P2PSide.Sell, "EISLA", sellRate));
+        await service.SetRateAsync("op", new P2PRateUpdate(Rail, P2PSide.Buy, "EISLA", buyRate));
         await service.SetAvailabilityAsync(Rail, available: true);
 
         return new World(service, ledger, directory, user, clock, options);
@@ -73,16 +73,16 @@ public sealed class TradeLifecycleTests : IAsyncLifetime
         var w = await SetUpAsync();
 
         var trade = await w.Service.OpenAsync(
-            w.User, new P2PTradeRequest(P2PSide.Sell, Usd("100.00"), Rail));
+            w.User, new P2PTradeRequest(P2PSide.Sell, EIsla("100.00"), Rail));
 
         Assert.Equal(P2PTradeStatuses.AwaitingPayout, trade.Status);
-        Assert.Equal(Usd("1.00"), trade.Fee);
-        // 99 USD converted, not 100: the fee is taken before the exchange.
+        Assert.Equal(EIsla("1.00"), trade.Fee);
+        // 99 converted, not 100: the fee is taken before the exchange.
         Assert.Equal(Cup("11880.00"), trade.Local);
 
-        Assert.Equal(-10000, w.Ledger.Balance(AccountRef.User(w.User, Currency.Usd)));
-        Assert.Equal(9900, w.Ledger.Balance(AccountRef.SettlementFund(Currency.Usd)) - 1000000);
-        Assert.Equal(100, w.Ledger.Balance(AccountRef.Fees(Currency.Usd)));
+        Assert.Equal(-10000, w.Ledger.Balance(AccountRef.User(w.User, Currency.EIsla)));
+        Assert.Equal(9900, w.Ledger.Balance(AccountRef.SettlementFund(Currency.EIsla)) - 1000000);
+        Assert.Equal(100, w.Ledger.Balance(AccountRef.Fees(Currency.EIsla)));
 
         // The local side: committed out of the fund and owed through escrow.
         Assert.Equal(1188000, w.Ledger.Balance(AccountRef.Escrow(Currency.Cup)));
@@ -96,7 +96,7 @@ public sealed class TradeLifecycleTests : IAsyncLifetime
     {
         var w = await SetUpAsync();
         var trade = await w.Service.OpenAsync(
-            w.User, new P2PTradeRequest(P2PSide.Sell, Usd("100.00"), Rail));
+            w.User, new P2PTradeRequest(P2PSide.Sell, EIsla("100.00"), Rail));
 
         var paid = await w.Service.ConfirmPayoutAsync("op", Guid.Parse(trade.Id), "TM-99887");
 
@@ -115,7 +115,7 @@ public sealed class TradeLifecycleTests : IAsyncLifetime
     {
         var w = await SetUpAsync();
         var trade = await w.Service.OpenAsync(
-            w.User, new P2PTradeRequest(P2PSide.Sell, Usd("100.00"), Rail));
+            w.User, new P2PTradeRequest(P2PSide.Sell, EIsla("100.00"), Rail));
 
         var refunded = await w.Service.FailPayoutAsync(
             "op", Guid.Parse(trade.Id), "El número de teléfono no existe.");
@@ -125,8 +125,8 @@ public sealed class TradeLifecycleTests : IAsyncLifetime
 
         // Whole again: IslaPay did not provide the service, so it does not
         // keep the charge.
-        Assert.Equal(0, w.Ledger.Balance(AccountRef.User(w.User, Currency.Usd)));
-        Assert.Equal(0, w.Ledger.Balance(AccountRef.Fees(Currency.Usd)));
+        Assert.Equal(0, w.Ledger.Balance(AccountRef.User(w.User, Currency.EIsla)));
+        Assert.Equal(0, w.Ledger.Balance(AccountRef.Fees(Currency.EIsla)));
         Assert.Equal(0, w.Ledger.Balance(AccountRef.Escrow(Currency.Cup)));
         Assert.Equal(100000000, w.Ledger.Balance(AccountRef.SettlementFund(Currency.Cup)));
     }
@@ -135,13 +135,13 @@ public sealed class TradeLifecycleTests : IAsyncLifetime
     public async Task A_seller_who_cannot_afford_it_leaves_no_trade_behind()
     {
         var w = await SetUpAsync();
-        w.Ledger.RefuseWith = Usd("4.00");
+        w.Ledger.RefuseWith = EIsla("4.00");
 
         var refused = await Assert.ThrowsAsync<P2PException>(
-            () => w.Service.OpenAsync(w.User, new P2PTradeRequest(P2PSide.Sell, Usd("100.00"), Rail)));
+            () => w.Service.OpenAsync(w.User, new P2PTradeRequest(P2PSide.Sell, EIsla("100.00"), Rail)));
 
         Assert.Equal(P2PErrors.InsufficientFunds, refused.Code);
-        Assert.Equal("USD", refused.Facts["currency"]);
+        Assert.Equal("EISLA", refused.Facts["currency"]);
 
         await using var db = _fixture.Context();
         Assert.False(await db.Trades.AnyAsync(t => t.UserId == w.User));
@@ -154,7 +154,7 @@ public sealed class TradeLifecycleTests : IAsyncLifetime
         var w = await SetUpAsync(fundCup: "10.00");
 
         var refused = await Assert.ThrowsAsync<P2PException>(
-            () => w.Service.OpenAsync(w.User, new P2PTradeRequest(P2PSide.Sell, Usd("100.00"), Rail)));
+            () => w.Service.OpenAsync(w.User, new P2PTradeRequest(P2PSide.Sell, EIsla("100.00"), Rail)));
 
         // The settlement fund is a platform account and may go negative, so
         // the ledger would have recorded this happily. Nothing else stops it.
@@ -168,7 +168,7 @@ public sealed class TradeLifecycleTests : IAsyncLifetime
         var w = await SetUpAsync(fundCup: "10.00");
 
         var quote = await w.Service.QuoteAsync(
-            new P2PQuoteRequest(P2PSide.Sell, Usd("100.00"), Rail));
+            new P2PQuoteRequest(P2PSide.Sell, EIsla("100.00"), Rail));
 
         // Not an error: the client shows the number and explains why it cannot
         // be traded. See D2 — the fund's balance no longer travels.
@@ -182,15 +182,15 @@ public sealed class TradeLifecycleTests : IAsyncLifetime
     {
         var w = await SetUpAsync();
         var quote = await w.Service.QuoteAsync(
-            new P2PQuoteRequest(P2PSide.Sell, Usd("100.00"), Rail));
+            new P2PQuoteRequest(P2PSide.Sell, EIsla("100.00"), Rail));
 
         w.Clock.Advance(TimeSpan.FromMinutes(1));
-        await w.Service.SetRateAsync("op", new P2PRateUpdate(Rail, P2PSide.Sell, "USD", "90"));
+        await w.Service.SetRateAsync("op", new P2PRateUpdate(Rail, P2PSide.Sell, "EISLA", "90"));
 
         var refused = await Assert.ThrowsAsync<P2PException>(
             () => w.Service.OpenAsync(
                 w.User,
-                new P2PTradeRequest(P2PSide.Sell, Usd("100.00"), Rail, QuotedRate: quote.Rate)));
+                new P2PTradeRequest(P2PSide.Sell, EIsla("100.00"), Rail, QuotedRate: quote.Rate)));
 
         // Filling at a price the user never saw is worse than asking again.
         Assert.Equal(P2PErrors.QuoteExpired, refused.Code);
@@ -202,12 +202,12 @@ public sealed class TradeLifecycleTests : IAsyncLifetime
     {
         var w = await SetUpAsync();
         var trade = await w.Service.OpenAsync(
-            w.User, new P2PTradeRequest(P2PSide.Sell, Usd("50.00"), Rail));
+            w.User, new P2PTradeRequest(P2PSide.Sell, EIsla("50.00"), Rail));
 
         var cancelled = await w.Service.CancelAsync(w.User, Guid.Parse(trade.Id));
 
         Assert.Equal(P2PTradeStatuses.Refunded, cancelled.Status);
-        Assert.Equal(0, w.Ledger.Balance(AccountRef.User(w.User, Currency.Usd)));
+        Assert.Equal(0, w.Ledger.Balance(AccountRef.User(w.User, Currency.EIsla)));
     }
 
     // ------------------------------------------------------------------- buy
@@ -218,7 +218,7 @@ public sealed class TradeLifecycleTests : IAsyncLifetime
         var w = await SetUpAsync();
 
         var trade = await w.Service.OpenAsync(
-            w.User, new P2PTradeRequest(P2PSide.Buy, Usd("100.00"), Rail));
+            w.User, new P2PTradeRequest(P2PSide.Buy, EIsla("100.00"), Rail));
 
         Assert.Equal(P2PTradeStatuses.AwaitingPayment, trade.Status);
         // The gross converts, not the net: the fee comes out of the wallet
@@ -235,13 +235,13 @@ public sealed class TradeLifecycleTests : IAsyncLifetime
     {
         var w = await SetUpAsync();
         var trade = await w.Service.OpenAsync(
-            w.User, new P2PTradeRequest(P2PSide.Buy, Usd("100.00"), Rail));
+            w.User, new P2PTradeRequest(P2PSide.Buy, EIsla("100.00"), Rail));
 
         var credited = await w.Service.ConfirmReceiptAsync("op", Guid.Parse(trade.Id), "TM-12345");
 
         Assert.Equal(P2PTradeStatuses.Completed, credited.Status);
-        Assert.Equal(9900, w.Ledger.Balance(AccountRef.User(w.User, Currency.Usd)));
-        Assert.Equal(100, w.Ledger.Balance(AccountRef.Fees(Currency.Usd)));
+        Assert.Equal(9900, w.Ledger.Balance(AccountRef.User(w.User, Currency.EIsla)));
+        Assert.Equal(100, w.Ledger.Balance(AccountRef.Fees(Currency.EIsla)));
 
         // Negative on the mirror means received from outside.
         Assert.Equal(-1250000, w.Ledger.Balance(AccountRef.External(Rail, Currency.Cup)));
@@ -253,7 +253,7 @@ public sealed class TradeLifecycleTests : IAsyncLifetime
     {
         var w = await SetUpAsync();
         var trade = await w.Service.OpenAsync(
-            w.User, new P2PTradeRequest(P2PSide.Buy, Usd("20.00"), Rail));
+            w.User, new P2PTradeRequest(P2PSide.Buy, EIsla("20.00"), Rail));
 
         w.Clock.Advance(w.Options.PaymentWindow + TimeSpan.FromMinutes(1));
         await w.Service.RepairAsync();
@@ -268,14 +268,14 @@ public sealed class TradeLifecycleTests : IAsyncLifetime
         var credited = await w.Service.ConfirmReceiptAsync("op", Guid.Parse(trade.Id), "TM-77");
 
         Assert.Equal(P2PTradeStatuses.Completed, credited.Status);
-        Assert.Equal(1980, w.Ledger.Balance(AccountRef.User(w.User, Currency.Usd)));
+        Assert.Equal(1980, w.Ledger.Balance(AccountRef.User(w.User, Currency.EIsla)));
     }
 
     [SkippableFact]
     public async Task An_expired_buy_that_nobody_paid_costs_nothing()
     {
         var w = await SetUpAsync();
-        await w.Service.OpenAsync(w.User, new P2PTradeRequest(P2PSide.Buy, Usd("20.00"), Rail));
+        await w.Service.OpenAsync(w.User, new P2PTradeRequest(P2PSide.Buy, EIsla("20.00"), Rail));
 
         w.Clock.Advance(w.Options.PaymentWindow + TimeSpan.FromMinutes(1));
         Assert.Equal(1, await w.Service.RepairAsync());
@@ -290,7 +290,7 @@ public sealed class TradeLifecycleTests : IAsyncLifetime
     {
         var w = await SetUpAsync();
         var trade = await w.Service.OpenAsync(
-            w.User, new P2PTradeRequest(P2PSide.Sell, Usd("100.00"), Rail));
+            w.User, new P2PTradeRequest(P2PSide.Sell, EIsla("100.00"), Rail));
 
         await w.Service.ConfirmPayoutAsync("op", Guid.Parse(trade.Id), "TM-1");
         var again = await w.Service.ConfirmPayoutAsync("op", Guid.Parse(trade.Id), "TM-1");
@@ -306,7 +306,7 @@ public sealed class TradeLifecycleTests : IAsyncLifetime
     {
         var w = await SetUpAsync();
         var trade = await w.Service.OpenAsync(
-            w.User, new P2PTradeRequest(P2PSide.Buy, Usd("20.00"), Rail));
+            w.User, new P2PTradeRequest(P2PSide.Buy, EIsla("20.00"), Rail));
 
         var refused = await Assert.ThrowsAsync<P2PException>(
             () => w.Service.ConfirmPayoutAsync("op", Guid.Parse(trade.Id), "TM-1"));
@@ -319,7 +319,7 @@ public sealed class TradeLifecycleTests : IAsyncLifetime
     {
         var w = await SetUpAsync();
         var trade = await w.Service.OpenAsync(
-            w.User, new P2PTradeRequest(P2PSide.Sell, Usd("100.00"), Rail));
+            w.User, new P2PTradeRequest(P2PSide.Sell, EIsla("100.00"), Rail));
 
         await w.Service.ConfirmPayoutAsync("op", Guid.Parse(trade.Id), "TM-1");
 
@@ -339,7 +339,7 @@ public sealed class TradeLifecycleTests : IAsyncLifetime
         var w = await SetUpAsync(verified: false);
 
         var refused = await Assert.ThrowsAsync<P2PException>(
-            () => w.Service.OpenAsync(w.User, new P2PTradeRequest(P2PSide.Sell, Usd("50.00"), Rail)));
+            () => w.Service.OpenAsync(w.User, new P2PTradeRequest(P2PSide.Sell, EIsla("50.00"), Rail)));
 
         Assert.Equal(P2PErrors.PhoneNotVerified, refused.Code);
     }
@@ -366,12 +366,12 @@ public sealed class TradeLifecycleTests : IAsyncLifetime
         var w = await SetUpAsync();
 
         var tooSmall = await Assert.ThrowsAsync<P2PException>(
-            () => w.Service.OpenAsync(w.User, new P2PTradeRequest(P2PSide.Sell, Usd("1.00"), Rail)));
+            () => w.Service.OpenAsync(w.User, new P2PTradeRequest(P2PSide.Sell, EIsla("1.00"), Rail)));
         Assert.Equal(P2PErrors.BelowMinimum, tooSmall.Code);
         Assert.Equal("5.00", tooSmall.Facts["minimum"]);
 
         var tooBig = await Assert.ThrowsAsync<P2PException>(
-            () => w.Service.OpenAsync(w.User, new P2PTradeRequest(P2PSide.Sell, Usd("9000.00"), Rail)));
+            () => w.Service.OpenAsync(w.User, new P2PTradeRequest(P2PSide.Sell, EIsla("9000.00"), Rail)));
         Assert.Equal(P2PErrors.AboveMaximum, tooBig.Code);
         Assert.Equal("500.00", tooBig.Facts["maximum"]);
     }
@@ -381,7 +381,7 @@ public sealed class TradeLifecycleTests : IAsyncLifetime
     {
         var w = await SetUpAsync();
         var sell = await w.Service.OpenAsync(
-            w.User, new P2PTradeRequest(P2PSide.Sell, Usd("30.00"), Rail));
+            w.User, new P2PTradeRequest(P2PSide.Sell, EIsla("30.00"), Rail));
 
         w.Clock.Advance(TimeSpan.FromMinutes(20));
 

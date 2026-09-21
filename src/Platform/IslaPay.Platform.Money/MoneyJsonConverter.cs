@@ -5,7 +5,7 @@ namespace IslaPay.Platform;
 
 /// <summary>
 /// Reads and writes the contract's money shape:
-/// <c>{"amount": "100.50", "currency": "USD"}</c>.
+/// <c>{"amount": "100.50", "currency": "EISLA"}</c>.
 /// </summary>
 /// <remarks>
 /// The amount is a JSON string on purpose. A JSON number would be parsed as a

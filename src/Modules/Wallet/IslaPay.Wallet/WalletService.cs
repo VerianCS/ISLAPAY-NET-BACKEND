@@ -29,7 +29,7 @@ public sealed class WalletService
     /// just signed up and wants to know where to send money.
     /// </remarks>
     public static readonly IReadOnlyList<Currency> OpenedOnRegistration =
-        [Currency.Usd, Currency.Usdc, Currency.Usdt];
+        [Currency.EIsla, Currency.Usdc, Currency.Usdt];
 
     private readonly ILedger _ledger;
     private readonly IUserDirectory _directory;

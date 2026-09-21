@@ -59,7 +59,7 @@ public sealed class RepairTests : IAsyncLifetime
         Description: null,
         Category: "Electrónica",
         Condition: "Nuevo",
-        Price: Money.Parse("50.00", Currency.Usd));
+        Price: Money.Parse("50.00", Currency.EIsla));
 
     private static async Task<(Guid Listing, Guid Order, string Code)> AHeldOrderAsync(World w)
     {
@@ -78,8 +78,8 @@ public sealed class RepairTests : IAsyncLifetime
         var touched = await w.Service.RepairAsync();
 
         Assert.Equal(1, touched);
-        Assert.Equal(0, w.Ledger.Balance(AccountRef.Escrow(Currency.Usd)));
-        Assert.Equal(0, w.Ledger.Balance(AccountRef.User(w.Buyer, Currency.Usd)));
+        Assert.Equal(0, w.Ledger.Balance(AccountRef.Escrow(Currency.EIsla)));
+        Assert.Equal(0, w.Ledger.Balance(AccountRef.User(w.Buyer, Currency.EIsla)));
 
         var settled = await w.Service.OrderAsync(w.Buyer, order);
         Assert.Equal(OrderStatuses.Expired, settled.Status);
@@ -112,7 +112,7 @@ public sealed class RepairTests : IAsyncLifetime
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => w.Service.PlaceOrderAsync(w.Buyer, Guid.Parse(listing.Id)));
 
-        Assert.Equal(5000, w.Ledger.Balance(AccountRef.Escrow(Currency.Usd)));
+        Assert.Equal(5000, w.Ledger.Balance(AccountRef.Escrow(Currency.EIsla)));
 
         w.Clock.Advance(w.Options.InFlightGrace + TimeSpan.FromMinutes(1));
         Assert.Equal(1, await w.Service.RepairAsync());
@@ -126,7 +126,7 @@ public sealed class RepairTests : IAsyncLifetime
         Assert.Equal(OrderStatuses.Held, repaired.Status);
         Assert.NotNull(repaired.HoldPostingId);
         Assert.Single(w.Ledger.Posted);
-        Assert.Equal(5000, w.Ledger.Balance(AccountRef.Escrow(Currency.Usd)));
+        Assert.Equal(5000, w.Ledger.Balance(AccountRef.Escrow(Currency.EIsla)));
     }
 
     [SkippableFact]
@@ -141,7 +141,7 @@ public sealed class RepairTests : IAsyncLifetime
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => w.Service.RedeemAsync(w.Seller, code));
 
-        Assert.Equal(4950, w.Ledger.Balance(AccountRef.User(w.Seller, Currency.Usd)));
+        Assert.Equal(4950, w.Ledger.Balance(AccountRef.User(w.Seller, Currency.EIsla)));
 
         // Now let the hold expire as well, so the sweeper has every reason to
         // think this needs refunding. It must not: the seller has been paid.
@@ -151,8 +151,8 @@ public sealed class RepairTests : IAsyncLifetime
         var settled = await w.Service.OrderAsync(w.Buyer, order);
         Assert.Equal(OrderStatuses.Released, settled.Status);
 
-        Assert.Equal(0, w.Ledger.Balance(AccountRef.Escrow(Currency.Usd)));
-        Assert.Equal(-5000, w.Ledger.Balance(AccountRef.User(w.Buyer, Currency.Usd)));
+        Assert.Equal(0, w.Ledger.Balance(AccountRef.Escrow(Currency.EIsla)));
+        Assert.Equal(-5000, w.Ledger.Balance(AccountRef.User(w.Buyer, Currency.EIsla)));
         Assert.Equal(ListingStatuses.Sold, (await w.Service.ListingAsync(listing)).Status);
     }
 
@@ -173,8 +173,8 @@ public sealed class RepairTests : IAsyncLifetime
         Assert.Equal(1, await w.Service.RepairAsync());
 
         // Not paid out on the strength of a request that did not finish.
-        Assert.Equal(0, w.Ledger.Balance(AccountRef.User(w.Seller, Currency.Usd)));
-        Assert.Equal(5000, w.Ledger.Balance(AccountRef.Escrow(Currency.Usd)));
+        Assert.Equal(0, w.Ledger.Balance(AccountRef.User(w.Seller, Currency.EIsla)));
+        Assert.Equal(5000, w.Ledger.Balance(AccountRef.Escrow(Currency.EIsla)));
 
         var back = await w.Service.OrderAsync(w.Buyer, order);
         Assert.Equal(OrderStatuses.Held, back.Status);
@@ -197,7 +197,7 @@ public sealed class RepairTests : IAsyncLifetime
         Assert.Equal(1, await w.Service.RepairAsync());
 
         Assert.Equal(OrderStatuses.Cancelled, (await w.Service.OrderAsync(w.Buyer, order)).Status);
-        Assert.Equal(0, w.Ledger.Balance(AccountRef.User(w.Buyer, Currency.Usd)));
+        Assert.Equal(0, w.Ledger.Balance(AccountRef.User(w.Buyer, Currency.EIsla)));
         Assert.Equal(ListingStatuses.Active, (await w.Service.ListingAsync(listing)).Status);
     }
 
@@ -219,9 +219,9 @@ public sealed class RepairTests : IAsyncLifetime
         await w.Service.RepairAsync();
         await w.Service.RepairAsync();
 
-        Assert.Equal(0, w.Ledger.Balance(AccountRef.Escrow(Currency.Usd)));
-        Assert.Equal(0, w.Ledger.Balance(AccountRef.User(w.Buyer, Currency.Usd)));
-        Assert.Equal(0, w.Ledger.Balance(AccountRef.User(w.Seller, Currency.Usd)));
+        Assert.Equal(0, w.Ledger.Balance(AccountRef.Escrow(Currency.EIsla)));
+        Assert.Equal(0, w.Ledger.Balance(AccountRef.User(w.Buyer, Currency.EIsla)));
+        Assert.Equal(0, w.Ledger.Balance(AccountRef.User(w.Seller, Currency.EIsla)));
 
         Assert.Single(
             w.Ledger.Posted, p => p.IdempotencyKey == MarketplaceService.SettleKey(order));
@@ -240,7 +240,7 @@ public sealed class RepairTests : IAsyncLifetime
         Assert.Equal(1, await w.Service.RepairAsync());
         Assert.Equal(0, await w.Service.RepairAsync());
 
-        Assert.Equal(0, w.Ledger.Balance(AccountRef.User(w.Buyer, Currency.Usd)));
+        Assert.Equal(0, w.Ledger.Balance(AccountRef.User(w.Buyer, Currency.EIsla)));
         Assert.Single(
             w.Ledger.Posted, p => p.IdempotencyKey == MarketplaceService.SettleKey(order));
     }
@@ -259,6 +259,6 @@ public sealed class RepairTests : IAsyncLifetime
         // Refused on the clock rather than on the sweeper having run: a seller
         // must not be paid because the sweep happened to be a minute late.
         Assert.Equal(MarketplaceErrors.OrderExpired, refused.Code);
-        Assert.Equal(0, w.Ledger.Balance(AccountRef.User(w.Seller, Currency.Usd)));
+        Assert.Equal(0, w.Ledger.Balance(AccountRef.User(w.Seller, Currency.EIsla)));
     }
 }

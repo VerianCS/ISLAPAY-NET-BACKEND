@@ -35,7 +35,7 @@ public enum AccountOwner
 /// </summary>
 /// <remarks>
 /// The whole point of this type. A caller has to be able to say "the user's
-/// USD account" without linking against <c>IslaPay.Ledger.Domain</c>, or the
+/// E-ISLA account" without linking against <c>IslaPay.Ledger.Domain</c>, or the
 /// public face of the module leaks its inside and the seam stops meaning
 /// anything.
 /// </remarks>

@@ -29,7 +29,7 @@ public sealed class TradeRepairTests : IAsyncLifetime
 
     public Task DisposeAsync() => Task.CompletedTask;
 
-    private static Money Usd(string amount) => Money.Parse(amount, Currency.Usd);
+    private static Money EIsla(string amount) => Money.Parse(amount, Currency.EIsla);
 
     private static Money Cup(string amount) => Money.Parse(amount, Currency.Cup);
 
@@ -46,21 +46,21 @@ public sealed class TradeRepairTests : IAsyncLifetime
 
         var ledger = new FakeLedger();
         ledger.Fund(AccountRef.SettlementFund(Currency.Cup), Cup("1000000.00"));
-        ledger.Fund(AccountRef.SettlementFund(Currency.Usd), Usd("10000.00"));
+        ledger.Fund(AccountRef.SettlementFund(Currency.EIsla), EIsla("10000.00"));
 
         var clock = new FakeClock(DateTimeOffset.Parse("2026-02-01T10:00:00Z", null));
         var options = new P2POptions();
         var service = _fixture.Service(ledger, directory, options, clock);
 
-        await service.SetRateAsync("op", new P2PRateUpdate(Rail, P2PSide.Sell, "USD", "120"));
-        await service.SetRateAsync("op", new P2PRateUpdate(Rail, P2PSide.Buy, "USD", "125"));
+        await service.SetRateAsync("op", new P2PRateUpdate(Rail, P2PSide.Sell, "EISLA", "120"));
+        await service.SetRateAsync("op", new P2PRateUpdate(Rail, P2PSide.Buy, "EISLA", "125"));
         await service.SetAvailabilityAsync(Rail, available: true);
 
         return new World(service, ledger, user, clock, options);
     }
 
     private static Task<P2PTradeDto> SellAsync(World w, string amount = "100.00") =>
-        w.Service.OpenAsync(w.User, new P2PTradeRequest(P2PSide.Sell, Usd(amount), Rail));
+        w.Service.OpenAsync(w.User, new P2PTradeRequest(P2PSide.Sell, EIsla(amount), Rail));
 
     [SkippableFact]
     public async Task A_commit_that_landed_before_the_crash_is_adopted_not_re_posted()
@@ -102,7 +102,7 @@ public sealed class TradeRepairTests : IAsyncLifetime
                     created_at, expires_at)
                  VALUES
                    ({Guid.NewGuid()}, {w.User}, 'Ana', 'sell', {Rail}, 'CUP Transfermóvil',
-                    'USD', 10000, 100, 'CUP', 1188000, 120, 'ZZZZ-ZZZZ', 'pending',
+                    'EISLA', 10000, 100, 'CUP', 1188000, 120, 'ZZZZ-ZZZZ', 'pending',
                     {w.Clock.GetUtcNow()}, {w.Clock.GetUtcNow().AddHours(4)})
                  """);
         }
@@ -133,9 +133,9 @@ public sealed class TradeRepairTests : IAsyncLifetime
         var settled = await w.Service.TradeAsync(w.User, Guid.Parse(trade.Id));
 
         // Finished as what it was. Resolving it as a refund would have given
-        // the user their USD back on top of the CUP they had just received.
+        // the user their E-ISLA back on top of the CUP they had just received.
         Assert.Equal(P2PTradeStatuses.Completed, settled.Status);
-        Assert.Equal(-10000, w.Ledger.Balance(AccountRef.User(w.User, Currency.Usd)));
+        Assert.Equal(-10000, w.Ledger.Balance(AccountRef.User(w.User, Currency.EIsla)));
     }
 
     [SkippableFact]
@@ -155,7 +155,7 @@ public sealed class TradeRepairTests : IAsyncLifetime
 
         Assert.Equal(P2PTradeStatuses.Refunded, settled.Status);
         Assert.Equal("sin saldo en la cuenta", settled.FailureReason);
-        Assert.Equal(0, w.Ledger.Balance(AccountRef.User(w.User, Currency.Usd)));
+        Assert.Equal(0, w.Ledger.Balance(AccountRef.User(w.User, Currency.EIsla)));
         Assert.Equal(0, w.Ledger.Balance(AccountRef.External(Rail, Currency.Cup)));
     }
 
@@ -195,7 +195,7 @@ public sealed class TradeRepairTests : IAsyncLifetime
     {
         var w = await SetUpAsync();
         var trade = await w.Service.OpenAsync(
-            w.User, new P2PTradeRequest(P2PSide.Buy, Usd("40.00"), Rail));
+            w.User, new P2PTradeRequest(P2PSide.Buy, EIsla("40.00"), Rail));
 
         await using (var db = _fixture.Context())
         {
@@ -213,7 +213,7 @@ public sealed class TradeRepairTests : IAsyncLifetime
         // refuses the other one outright.
         var back = await w.Service.TradeAsync(w.User, Guid.Parse(trade.Id));
         Assert.Equal(P2PTradeStatuses.AwaitingPayment, back.Status);
-        Assert.Equal(0, w.Ledger.Balance(AccountRef.User(w.User, Currency.Usd)));
+        Assert.Equal(0, w.Ledger.Balance(AccountRef.User(w.User, Currency.EIsla)));
     }
 
     [SkippableFact]
@@ -235,7 +235,7 @@ public sealed class TradeRepairTests : IAsyncLifetime
         Assert.Equal(0, w.Ledger.Balance(AccountRef.Escrow(Currency.Cup)));
         Assert.Equal(0, w.Ledger.Balance(AccountRef.External(Rail, Currency.Cup)));
         Assert.Equal(100000000, w.Ledger.Balance(AccountRef.SettlementFund(Currency.Cup)));
-        Assert.Equal(0, w.Ledger.Balance(AccountRef.User(w.User, Currency.Usd)));
+        Assert.Equal(0, w.Ledger.Balance(AccountRef.User(w.User, Currency.EIsla)));
 
         Assert.Single(
             w.Ledger.Posted, p => p.IdempotencyKey == P2PService.SettleKey(Guid.Parse(trade.Id)));
@@ -261,7 +261,7 @@ public sealed class TradeRepairTests : IAsyncLifetime
     public async Task Sweeping_twice_settles_once()
     {
         var w = await SetUpAsync();
-        await w.Service.OpenAsync(w.User, new P2PTradeRequest(P2PSide.Buy, Usd("20.00"), Rail));
+        await w.Service.OpenAsync(w.User, new P2PTradeRequest(P2PSide.Buy, EIsla("20.00"), Rail));
 
         w.Clock.Advance(w.Options.PaymentWindow + TimeSpan.FromMinutes(1));
 

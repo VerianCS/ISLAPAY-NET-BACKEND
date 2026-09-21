@@ -32,7 +32,7 @@ public readonly record struct Leg(AccountId Account, Money Amount);
 /// express it doing so.
 /// <para>
 /// Per currency, not overall: a conversion touches two currencies and each
-/// side balances independently. Summing across currencies would let 100 USD
+/// side balances independently. Summing across currencies would let 100 E-ISLA
 /// "balance" against 100 USDT, which is not balance, it is a guess about the
 /// rate.
 /// </para>

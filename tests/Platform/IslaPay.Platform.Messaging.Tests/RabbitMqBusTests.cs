@@ -106,7 +106,7 @@ public class RabbitMqBusTests
         await bus.PublishAsync(
             context,
             Naming.RoutingKey("transfer", "completed"),
-            new { userId = "42", amount = new { amount = "100.50", currency = "USD" } },
+            new { userId = "42", amount = new { amount = "100.50", currency = "EISLA" } },
             correlationId: correlation);
 
         var (body, properties) = await ConsumeOneAsync(queue);

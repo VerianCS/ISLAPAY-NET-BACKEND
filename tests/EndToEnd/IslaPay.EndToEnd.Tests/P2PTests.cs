@@ -59,7 +59,7 @@ public class P2PTests
         Assert.Equal("11880.00", trade.Local.ToString());
 
         var ledger = host.Services.GetRequiredService<ILedger>();
-        Assert.Equal("100.00", (await UsdBalanceAsync(ledger, user.UserId)).ToString());
+        Assert.Equal("100.00", (await EIslaBalanceAsync(ledger, user.UserId)).ToString());
 
         // The obligation is a real liability in the ledger, not a flag on a
         // row: this is what Currency.Cup exists for.
@@ -118,7 +118,7 @@ public class P2PTests
 
         // Down to the cent, fee included.
         var ledger = host.Services.GetRequiredService<ILedger>();
-        Assert.Equal("80.00", (await UsdBalanceAsync(ledger, user.UserId)).ToString());
+        Assert.Equal("80.00", (await EIslaBalanceAsync(ledger, user.UserId)).ToString());
     }
 
     [SkippableFact]
@@ -131,7 +131,7 @@ public class P2PTests
         await OpenTheMarketAsync(host, operador);
 
         var user = await VerifiedUserAsync(host);
-        await FundTheDeskAsync(host, Currency.Usd, "10000.00");
+        await FundTheDeskAsync(host, Currency.EIsla, "10000.00");
 
         var trade = await Read<P2PTradeDto>(await TradeAsync(host, user, P2PSide.Buy, "100.00"));
 
@@ -140,14 +140,14 @@ public class P2PTests
         Assert.NotNull(trade.Reference);
 
         var ledger = host.Services.GetRequiredService<ILedger>();
-        Assert.Equal("0.00", (await UsdBalanceAsync(ledger, user.UserId)).ToString());
+        Assert.Equal("0.00", (await EIslaBalanceAsync(ledger, user.UserId)).ToString());
 
         var credited = await Read<P2PTradeDto>(await PostAsync(
             host, operador, $"/v1/admin/p2p/trades/{trade.Id}/received",
             new P2PSettleRequest("TM-31415")));
 
         Assert.Equal(P2PTradeStatuses.Completed, credited.Status);
-        Assert.Equal("99.00", (await UsdBalanceAsync(ledger, user.UserId)).ToString());
+        Assert.Equal("99.00", (await EIslaBalanceAsync(ledger, user.UserId)).ToString());
     }
 
     [SkippableFact]
@@ -204,7 +204,7 @@ public class P2PTests
         Assert.Equal(P2PErrors.FundUnavailable, problem.Code);
 
         var ledger = host.Services.GetRequiredService<ILedger>();
-        Assert.Equal("500.00", (await UsdBalanceAsync(ledger, user.UserId)).ToString());
+        Assert.Equal("500.00", (await EIslaBalanceAsync(ledger, user.UserId)).ToString());
     }
 
     [SkippableFact]
@@ -229,7 +229,7 @@ public class P2PTests
 
         // The second would have overdrawn a 100 balance by 20.
         var ledger = host.Services.GetRequiredService<ILedger>();
-        Assert.Equal("40.00", (await UsdBalanceAsync(ledger, user.UserId)).ToString());
+        Assert.Equal("40.00", (await EIslaBalanceAsync(ledger, user.UserId)).ToString());
     }
 
     [SkippableFact]
@@ -289,7 +289,7 @@ public class P2PTests
             using var client = host.CreateClient();
             Authorize(client, operador.AccessToken);
             var response = await client.PutAsJsonAsync(
-                "/v1/admin/p2p/rates", new P2PRateUpdate(Rail, side, "USD", rate), Json);
+                "/v1/admin/p2p/rates", new P2PRateUpdate(Rail, side, "EISLA", rate), Json);
 
             Assert.True(response.IsSuccessStatusCode,
                 $"set {side} rate: {(int)response.StatusCode} {await response.Content.ReadAsStringAsync()}");
@@ -308,7 +308,7 @@ public class P2PTests
         IslaPayHost host, Account user, P2PSide side, string amount, string? key = null) =>
         PostAsync(
             host, user, "/v1/p2p/trades",
-            new P2PTradeRequest(side, Money.Parse(amount, Currency.Usd), Rail), key);
+            new P2PTradeRequest(side, Money.Parse(amount, Currency.EIsla), Rail), key);
 
     private static async Task<HttpResponseMessage> PostAsync(
         IslaPayHost host, Account actor, string path, object body, string? key = null)
@@ -403,14 +403,14 @@ public class P2PTests
     private static async Task<Account> FundedUserAsync(IslaPayHost host, string amount)
     {
         var account = await VerifiedUserAsync(host);
-        var money = Money.Parse(amount, Currency.Usd);
+        var money = Money.Parse(amount, Currency.EIsla);
 
         await host.Services.GetRequiredService<ILedger>().PostAsync(new PostingRequest(
             Kind: "settlement",
             Legs:
             [
-                new PostingLeg(AccountRef.User(account.UserId, Currency.Usd), money),
-                new PostingLeg(AccountRef.CashFloat(Currency.Usd), -money),
+                new PostingLeg(AccountRef.User(account.UserId, Currency.EIsla), money),
+                new PostingLeg(AccountRef.CashFloat(Currency.EIsla), -money),
             ]));
 
         return account;
@@ -420,11 +420,11 @@ public class P2PTests
         client.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", accessToken);
 
-    private static async Task<Money> UsdBalanceAsync(ILedger ledger, string userId)
+    private static async Task<Money> EIslaBalanceAsync(ILedger ledger, string userId)
     {
         var balances = await ledger.BalancesAsync(userId);
-        return balances.FirstOrDefault(b => b.Currency == Currency.Usd)?.Balance
-            ?? Money.Zero(Currency.Usd);
+        return balances.FirstOrDefault(b => b.Currency == Currency.EIsla)?.Balance
+            ?? Money.Zero(Currency.EIsla);
     }
 
     private static async Task<T> Read<T>(HttpResponseMessage response)

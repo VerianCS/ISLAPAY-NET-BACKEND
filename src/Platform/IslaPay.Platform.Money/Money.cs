@@ -17,7 +17,7 @@ namespace IslaPay.Platform;
 /// </para>
 /// <para>
 /// On the wire the amount is a decimal <em>string</em>, per the API contract:
-/// <c>{"amount": "100.50", "currency": "USD"}</c>. Parsing goes straight from
+/// <c>{"amount": "100.50", "currency": "EISLA"}</c>. Parsing goes straight from
 /// that string to minor units without passing through a float.
 /// </para>
 /// </remarks>

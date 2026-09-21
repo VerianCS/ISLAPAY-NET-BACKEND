@@ -102,7 +102,7 @@ public class OutboxDeliveryTests
                 Description: null,
                 Category: "Hogar",
                 Condition: "Usado",
-                Price: Money.Parse(price, Currency.Usd)),
+                Price: Money.Parse(price, Currency.EIsla)),
             Json);
 
         response.EnsureSuccessStatusCode();
@@ -152,13 +152,13 @@ public class OutboxDeliveryTests
 
     private static async Task FundAsync(IslaPayHost host, string userId, string amount)
     {
-        var money = Money.Parse(amount, Currency.Usd);
+        var money = Money.Parse(amount, Currency.EIsla);
         await host.Services.GetRequiredService<ILedger>().PostAsync(new PostingRequest(
             Kind: "settlement",
             Legs:
             [
-                new PostingLeg(AccountRef.User(userId, Currency.Usd), money),
-                new PostingLeg(AccountRef.CashFloat(Currency.Usd), -money),
+                new PostingLeg(AccountRef.User(userId, Currency.EIsla), money),
+                new PostingLeg(AccountRef.CashFloat(Currency.EIsla), -money),
             ]));
     }
 

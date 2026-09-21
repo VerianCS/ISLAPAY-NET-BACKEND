@@ -123,6 +123,35 @@ Working end to end:
   `Currency.Cup` exists — an obligation to send somebody money is a liability,
   not a column.
 
+### The currencies, and where each one is allowed
+
+`Currency` has four members and they are not four of a kind.
+
+**E-ISLA** (`EISLA`, two decimals) is the application's own unit and what a
+balance is usually quoted in. It is not a token and it is not on a chain: it is
+a liability of IslaPay, redeemable one for one against a stablecoin subject to
+the settlement fund having it. It is issued only by converting a deposit, by a
+P2P purchase, or by a treasury credit an operator signs for — never by
+anything a customer can call.
+
+It was called `USD` until this branch. The rename is a rename: no amount, no
+account and no moment changed, and `ledger/002_eisla.sql` says at length why a
+script is allowed to rewrite an append-only table to do it. The old code is
+**not** accepted as an alias, because a client that kept working while telling
+people they hold US dollars is worse than one that breaks.
+
+**USDC** and **USDT** (six decimals) are the on-chain ones, and the only two
+for which `IsOnChain` is true and a network has to be chosen.
+
+**CUP** belongs to P2P and nowhere else. It is the local leg of a trade: the
+platform's obligation to send somebody pesos, held by the settlement fund and
+owed through escrow until an operator pays it out. No customer account is ever
+opened in it — `IsCustomerHoldable` refuses, and it is absent from
+`WalletService.OpenedOnRegistration`. When the exchange and custody arrive,
+their escrow exists in E-ISLA, USDC and USDT only; a CUP escrow outside P2P
+would mean some other module had started owing pesos, which is a thing only the
+P2P desk does.
+
 The marketplace is where the seam between a module's tables and the ledger's
 transaction had to be faced. The ledger owns its transaction and will not hand
 it out, so an order's status and the posting that moved its money are two
@@ -134,9 +163,10 @@ and refunding to the buyer compete for the same unique index. Escrow is a
 platform account and may go negative: a second payout would not bounce, so
 nothing may depend on it not being attempted.
 
-Exchange and P2P are contracts only — the shapes are agreed in
-`API_CONTRACT.md`, nothing serves them yet. The rates in the wallet response
-are parity placeholders until Exchange exists, and say so in the code.
+Exchange is contracts only — the shapes are agreed in `API_CONTRACT.md`,
+nothing serves them yet. The rates in the wallet response are parity
+placeholders until it exists, and say so in the code. `STATUS.md` is the
+module-by-module account of what runs and what does not.
 
 Money can now get in and out, through P2P — but only as fast as a person
 works the queue, because the Cuban leg is a human sending a transfer. There is
