@@ -467,9 +467,11 @@ public sealed class MarketplaceService
 
     private async Task<bool> RepairOneAsync(Guid id, CancellationToken cancellationToken)
     {
-        // Re-read under a lock: the row may have been settled by a request
-        // between the scan above and now, which is the common case rather than
-        // the exotic one.
+        // Re-read: the row may have been settled by a request between the scan
+        // above and now, which is the common case rather than the exotic one.
+        // Tracking cleared for the same reason as in the claims below.
+        _db.ChangeTracker.Clear();
+
         var order = await _db.Orders
             .FirstOrDefaultAsync(o => o.Id == id, cancellationToken).ConfigureAwait(false);
         if (order is null) return false;
@@ -738,6 +740,13 @@ public sealed class MarketplaceService
         await using var transaction = await _db.Database
             .BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
+        // Cleared first: EF's identity map wins over a re-read, so an order
+        // already tracked on this context would come back at the status it was
+        // loaded with rather than the one the row now has. Reading under
+        // `FOR UPDATE` is meant to see what is actually there, and the sweeper
+        // walks up to a hundred orders on one context.
+        _db.ChangeTracker.Clear();
+
         var rows = await _db.Orders.FromSql(
             $"SELECT * FROM marketplace.orders WHERE code = {code} FOR UPDATE")
             .ToListAsync(cancellationToken).ConfigureAwait(false);
@@ -787,6 +796,13 @@ public sealed class MarketplaceService
     {
         await using var transaction = await _db.Database
             .BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        // Cleared first: EF's identity map wins over a re-read, so an order
+        // already tracked on this context would come back at the status it was
+        // loaded with rather than the one the row now has. Reading under
+        // `FOR UPDATE` is meant to see what is actually there, and the sweeper
+        // walks up to a hundred orders on one context.
+        _db.ChangeTracker.Clear();
 
         var rows = await _db.Orders.FromSql(
             $"SELECT * FROM marketplace.orders WHERE id = {orderId} FOR UPDATE")

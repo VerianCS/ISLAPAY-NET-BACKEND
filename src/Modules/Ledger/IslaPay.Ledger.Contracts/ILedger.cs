@@ -72,6 +72,27 @@ public interface ILedger
     Task<IReadOnlyList<AccountBalance>> BalancesAsync(
         string userId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// What one account holds.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Zero for an account that has never been opened, because "nothing" and
+    /// "no such account" are the same answer to this question and a caller
+    /// that had to tell them apart would only get it wrong.
+    /// </para>
+    /// <para>
+    /// This exists for the platform's own accounts. Customer and merchant
+    /// accounts may not go negative, so a posting against one is refused if it
+    /// would overdraw; platform accounts may, which means nothing in the ledger
+    /// stops IslaPay promising money it does not have. A module that can make
+    /// such a promise — P2P quoting a payout against the settlement fund — has
+    /// to ask first, and this is how.
+    /// </para>
+    /// </remarks>
+    Task<Money> BalanceOfAsync(
+        AccountRef account, CancellationToken cancellationToken = default);
+
     /// <summary>The user's movements across every currency, newest first.</summary>
     Task<LedgerEntryPage> EntriesAsync(
         string userId,

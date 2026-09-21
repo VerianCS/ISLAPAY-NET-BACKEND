@@ -19,17 +19,19 @@ Those are four different things and several modules are only the first two.
 | Ledger | 0 | 4 | 25 + 15 domain | **Works**, no HTTP surface by design |
 | Wallet | 3 | — (reads the ledger) | 8 | **Works** |
 | Marketplace | 10 | 2 | 23 | **Works** |
+| P2P | 12 | 3 | 33 | **Works** — needs an operator |
 | Exchange | 0 | 0 | 4 | Contracts only |
-| P2P | 0 | 0 | 3 | Contracts only |
 
-Platform: Api (4 tests), Data, Messaging (8), Money (19), AspNet, Serialization.
-End to end: 36. Architecture: 8. **212 in total**, against real Postgres,
+Platform: Api (4 tests), Data, Messaging (8), Money (52), AspNet, Serialization.
+End to end: 44. Architecture: 8. **249 in total**, against real Postgres,
 RabbitMQ and Keycloak.
 
-What the whole thing cannot do: **take money in or pay money out.** Every
-balance in every test is created by a test posting a settlement against the
-platform's float. There is no recharge endpoint, no deposit address, no payout.
-That is the gap that decides whether any of the rest is a product.
+What the whole thing can now do that it could not: **pay money out and take it
+in**, through P2P, provided a person settles the local leg. What it still
+cannot do is settle that leg itself — there is no Transfermóvil integration,
+no console for the operator to work the queue in, and no way to top up the
+settlement fund except by posting to the ledger directly. The rail exists; the
+hands on it do not.
 
 ---
 
@@ -154,16 +156,58 @@ quote, the rate source and the endpoint do not.
 
 ---
 
-## P2P — contracts only
+## P2P — works, and waits for a person
 
-52 lines of DTOs, 3 tests, nothing else. `BuildP2PSale` exists in the ledger's
-domain in the same way.
+Twelve routes: the rails and their rates, a quote, open a trade, read it,
+cancel it, list your own — and five for whoever settles them.
 
 Worth being clear about what this is, because the name misleads: it is instant
 exchange **against IslaPay** at a published rate, not a user-to-user market.
-There is no counterparty, no escrow and no dispute. It is also the intended
-cash-out rail, which makes it the most important unimplemented module in the
-repository.
+There is no counterparty and no dispute.
+
+"Instant" describes the price, not the settlement, and that is the whole
+design. A **sell** debits the wallet immediately and moves the counter-value
+out of the settlement fund into escrow, where it is explicitly the customer's
+until an operator confirms the Transfermóvil transfer. A **buy** posts nothing
+at all until an operator confirms the local money arrived — money is never
+credited before it exists.
+
+Every trade posts across two currencies in one posting, and each currency
+balances on its own. That is what `Currency.Cup` was added for: the obligation
+to send somebody pesos is a liability, and a liability belongs in the ledger
+rather than in a column somewhere. No customer holds a CUP balance and none
+ever will — it is absent from `WalletService.OpenedOnRegistration` and
+`IsCustomerHoldable` says so.
+
+**Owns three tables.** `methods` (rails), `rates` (appended, never updated, so
+a trade settled last Tuesday is still explicable at the price it was given)
+and `trades`.
+
+Two things it does that are not obvious and are deliberate:
+
+- **A committed sell never expires.** It has taken somebody's money, and the
+  only honest endings are paying them or giving it back — neither of which a
+  timer is entitled to decide. It waits for a person however long that takes,
+  and the queue is where the wait is visible.
+- **An expired buy can still be honoured.** Expiry means IslaPay has stopped
+  expecting the money, not that it will refuse it. A buyer who transfers at the
+  last minute and an operator who looks five minutes later would otherwise
+  leave IslaPay holding pesos it has no way to account for.
+
+**The solvency check is load-bearing.** The settlement fund is a platform
+account and platform accounts may go negative, so nothing in the ledger stops
+IslaPay promising a payout it cannot make. `ILedger.BalanceOfAsync` was added
+for this and it is the only thing that refuses the trade.
+
+**Not real yet:** there is no operator console, only the endpoints one would
+call, behind a `p2p-operator` realm role. There is no Transfermóvil
+integration — a person does it by hand and types the bank's reference back in.
+And there is no way to fund the desk's CUP except by posting to the ledger, so
+a treasury endpoint is the next obvious gap.
+
+It publishes `trade.committed.v1`, `trade.completed.v1` and
+`trade.refunded.v1`. **Nothing consumes them** — the first is exactly what an
+operator console should wake up on.
 
 ---
 
@@ -181,10 +225,12 @@ publishing off and would not have noticed.
 
 The honest part: **exactly one subscription exists.** Wallet consumes
 `identity.user.*.v1`. Queues are created only for declared subscriptions, so
-`x.wallet` and `x.marketplace` are declared, receive their messages, and drop
-them for want of a binding. Four event types are published into nothing:
+`x.wallet`, `x.marketplace` and `x.p2p` are declared, receive their messages,
+and drop them for want of a binding. Seven event types are published into
+nothing:
 `transfer.completed.v1`, `order.held.v1`, `order.released.v1`,
-`order.refunded.v1`.
+`order.refunded.v1`, `trade.committed.v1`, `trade.completed.v1`,
+`trade.refunded.v1` — seven now.
 
 That is not a bug. It is a notifications module that does not exist yet, and
 the events are correct and durable in the meantime. But nobody should read
@@ -242,8 +288,10 @@ point at endpoints this backend does not serve. 52 analyzer exclusions cover
 
 ## What makes this functional, in order
 
-1. **A way in.** An admin-issued credit endpoint — not a payment rail, but
-   what a pilot actually uses. `BuildDeposit` already exists and nothing calls it.
+1. **A way in.** P2P buy is one, once somebody works the queue. A treasury
+   endpoint to fund the desk is the piece that is missing, and an
+   admin-issued credit is the shortcut a pilot actually uses —
+   `BuildDeposit` already exists and nothing calls it.
 2. **Wallet on the phone.** Fix the client's paths, map the DTOs, send the
    idempotency key.
 3. **Marketplace on the phone.** A QR scanner, and the five screens the flow

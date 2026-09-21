@@ -95,6 +95,29 @@ public sealed class PostgresLedger : ILedger
         return balances;
     }
 
+    public async Task<Money> BalanceOfAsync(
+        AccountRef account, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(account);
+
+        var resolved = Resolve(account);
+
+        await using var connection = await _database.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand("""
+            SELECT COALESCE(b.minor_units, 0)
+            FROM ledger.accounts a
+            LEFT JOIN ledger.balances b ON b.account_id = a.id
+            WHERE a.name = @name;
+            """, connection);
+        command.Parameters.AddWithValue("name", resolved.ToString());
+
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+
+        // No row at all means the account has never been opened, which holds
+        // exactly as much as an open one nobody has posted to.
+        return Money.FromMinorUnits(result is long minor ? minor : 0, account.Currency);
+    }
+
     public async Task<LedgerEntryPage> EntriesAsync(
         string userId,
         int limit,

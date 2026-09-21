@@ -5,42 +5,39 @@ using IslaPay.Platform.Data;
 using IslaPay.TestSupport;
 using Microsoft.EntityFrameworkCore;
 
-namespace IslaPay.Marketplace.Tests;
+namespace IslaPay.P2P.Tests;
 
 /// <summary>
-/// A throwaway database with the marketplace's own schema applied.
+/// A throwaway database with the P2P schema applied.
 /// </summary>
 /// <remarks>
-/// Applied by running <c>Migrator</c> over the module's embedded scripts, so
-/// what is tested is the schema that ships — including the check constraints
-/// and the partial unique index, which are load-bearing here rather than
-/// decorative.
+/// Applied by running <c>Migrator</c> over the module's embedded script, so
+/// what is tested is the schema that ships — including the check constraints,
+/// which carry real rules here: a sell cannot wait on a payment, a settled
+/// trade cannot lack a settled time.
 /// </remarks>
-public sealed class MarketplaceFixture : PostgresFixture
+public sealed class P2PFixture : PostgresFixture
 {
     protected override Task AfterCreateAsync() => Migrator.ApplyAsync(Database,
     [
-        new MigrationSet("marketplace", typeof(MarketplaceModule).Assembly,
-            "IslaPay.Marketplace.Migrations."),
+        new MigrationSet("p2p", typeof(P2PModule).Assembly, "IslaPay.P2P.Migrations."),
     ]);
 
-    /// <summary>A context on the throwaway database.</summary>
-    public MarketplaceDbContext Context()
+    public P2PDbContext Context()
     {
-        var builder = new DbContextOptionsBuilder<MarketplaceDbContext>();
+        var builder = new DbContextOptionsBuilder<P2PDbContext>();
         builder.UseNpgsql(Options.ConnectionString);
-        return new MarketplaceDbContext(builder.Options);
+        return new P2PDbContext(builder.Options);
     }
 
     /// <summary>
-    /// Empties both tables.
+    /// Empties the trades and rates, and puts the seeded rail back as it was.
     /// </summary>
     /// <remarks>
-    /// Called before every test, and it is not tidiness. <c>RepairAsync</c> is
-    /// a sweep over the whole table by design, so an order one test left
-    /// behind is an order the next test's sweeper refunds — into that test's
-    /// own fake ledger, where it shows up as somebody else's money moving.
-    /// One database per test would cost a second each; this costs nothing.
+    /// Before every test, and not for tidiness: <c>RepairAsync</c> sweeps the
+    /// whole table by design, so a trade one test left behind is one the next
+    /// test's sweeper acts on — against that test's own fake ledger, where it
+    /// shows up as somebody else's money moving.
     /// </remarks>
     public async Task ResetAsync()
     {
@@ -48,22 +45,36 @@ public sealed class MarketplaceFixture : PostgresFixture
 
         await using var db = Context();
         await db.Database.ExecuteSqlRawAsync(
-            "TRUNCATE marketplace.orders, marketplace.listings RESTART IDENTITY CASCADE;");
+            """
+            TRUNCATE p2p.trades, p2p.rates RESTART IDENTITY;
+            UPDATE p2p.methods SET available = false;
+            """);
     }
 
-    /// <summary>The service under test, with a fake ledger and directory.</summary>
-    public MarketplaceService Service(
+    public P2PService Service(
         FakeLedger ledger,
         FakeDirectory directory,
-        MarketplaceOptions? options = null,
+        P2POptions? options = null,
         TimeProvider? clock = null) =>
-        new(Context(), ledger, directory, options ?? new MarketplaceOptions(), clock);
+        new(Context(), ledger, directory, options ?? new P2POptions(), clock);
 }
 
 [CollectionDefinition(Name)]
-public sealed class MarketplaceDefinition : ICollectionFixture<MarketplaceFixture>
+public sealed class P2PDefinition : ICollectionFixture<P2PFixture>
 {
-    public const string Name = "marketplace-schema";
+    public const string Name = "p2p-schema";
+}
+
+/// <summary>A clock a test can move.</summary>
+public sealed class FakeClock : TimeProvider
+{
+    private DateTimeOffset _now;
+
+    public FakeClock(DateTimeOffset now) => _now = now;
+
+    public override DateTimeOffset GetUtcNow() => _now;
+
+    public void Advance(TimeSpan by) => _now += by;
 }
 
 /// <summary>
@@ -71,16 +82,17 @@ public sealed class MarketplaceDefinition : ICollectionFixture<MarketplaceFixtur
 /// </summary>
 /// <remarks>
 /// <para>
-/// It enforces the one property the real ledger enforces and this module
-/// depends on: an idempotency key may be used once. Everything else — balances,
-/// entries, double entry — is the real ledger's business and is tested there
-/// and end to end.
+/// A near-copy of the marketplace's, and deliberately not shared. Putting it
+/// in the common test project would hand every module's tests a dependency on
+/// Ledger.Contracts, which is the coupling the architecture rules exist to
+/// prevent — the same reason the two modules repeat the settlement pattern
+/// rather than inheriting it.
 /// </para>
 /// <para>
-/// <see cref="FailAfterPosting"/> is what makes the repair testable. It
-/// commits the posting and then throws, which is precisely a process dying
-/// between the ledger's commit and the marketplace's, and is not something a
-/// real ledger can be asked to do.
+/// It enforces the one property the real ledger enforces and this module
+/// depends on: an idempotency key may be used once. It also tracks balances,
+/// because P2P asks the ledger what the settlement fund holds before it
+/// promises anything.
 /// </para>
 /// </remarks>
 public sealed class FakeLedger : ILedger
@@ -96,6 +108,14 @@ public sealed class FakeLedger : ILedger
 
     /// <summary>Refuses the next posting for want of funds.</summary>
     public Money? RefuseWith { get; set; }
+
+    /// <summary>Puts money somewhere without going through a posting.</summary>
+    public void Fund(AccountRef account, Money amount)
+    {
+        ArgumentNullException.ThrowIfNull(account);
+        _balances[account.ToString()] = _balances.GetValueOrDefault(account.ToString())
+            + amount.MinorUnits;
+    }
 
     public Task EnsureUserAccountsAsync(
         string userId, IReadOnlyCollection<Currency> currencies,
@@ -136,6 +156,24 @@ public sealed class FakeLedger : ILedger
         if (request.IdempotencyKey is { Length: > 0 } key && _byKey.TryGetValue(key, out var existing))
         {
             return Task.FromResult(new PostingReceipt(existing, Written: false));
+        }
+
+        // The real ledger refuses a posting whose legs do not sum to zero per
+        // currency. Checking it here too means a wrong set of legs fails in
+        // the module's own tests rather than only end to end.
+        foreach (var group in request.Legs.GroupBy(l => l.Amount.Currency))
+        {
+            var sum = group.Sum(l => l.Amount.MinorUnits);
+            if (sum != 0)
+            {
+                throw new InvalidOperationException(
+                    $"The {group.Key.Code()} legs sum to {sum}, not zero.");
+            }
+        }
+
+        if (request.Legs.Any(l => l.Amount.IsZero))
+        {
+            throw new InvalidOperationException("A zero leg would be refused by the ledger.");
         }
 
         var postingId = request.PostingId ?? Guid.NewGuid();

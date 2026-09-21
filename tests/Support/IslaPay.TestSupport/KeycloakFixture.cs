@@ -337,6 +337,60 @@ public sealed class KeycloakFixture : IAsyncLifetime, IDisposable
         await Expect(granted, HttpStatusCode.NoContent, "grant the service account its roles");
     }
 
+    /// <summary>
+    /// Creates a realm role if it does not exist and gives it to a user.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A realm role, not a client one, because that is what the modules look
+    /// for: a role tied to one client would have to be re-granted the day the
+    /// API is split in two, and an operator console added later would not
+    /// inherit it.
+    /// </para>
+    /// <para>
+    /// The caller must get a token <em>after</em> this runs. Roles are baked
+    /// into an access token when it is issued, so one minted a moment earlier
+    /// will keep saying no until it expires.
+    /// </para>
+    /// </remarks>
+    public async Task GrantRealmRoleAsync(string userId, string role)
+    {
+        // Re-read: the master token is short-lived and this runs whenever a
+        // test needs it rather than during set-up.
+        _adminToken = await MasterTokenAsync();
+
+        using (var create = Authorized(HttpMethod.Post, $"{Authority}/admin/realms/{Realm}/roles"))
+        {
+            create.Content = JsonContent.Create(new { name = role });
+            using var created = await _http.SendAsync(create);
+
+            // Conflict means another test made it first, which is the answer
+            // this method wanted anyway.
+            if (created.StatusCode is not (HttpStatusCode.Created or HttpStatusCode.Conflict))
+            {
+                await Expect(created, HttpStatusCode.Created, $"create the realm role {role}");
+            }
+        }
+
+        string roleId;
+        using (var read = Authorized(
+            HttpMethod.Get, $"{Authority}/admin/realms/{Realm}/roles/{Uri.EscapeDataString(role)}"))
+        {
+            using var found = await _http.SendAsync(read);
+            found.EnsureSuccessStatusCode();
+            using var json = JsonDocument.Parse(await found.Content.ReadAsStringAsync());
+            roleId = json.RootElement.GetProperty("id").GetString()!;
+        }
+
+        using var map = Authorized(
+            HttpMethod.Post,
+            $"{Authority}/admin/realms/{Realm}/users/{userId}/role-mappings/realm");
+        map.Content = JsonContent.Create(new[] { new { id = roleId, name = role } });
+
+        using var mapped = await _http.SendAsync(map);
+        await Expect(mapped, HttpStatusCode.NoContent, $"grant {role} to {userId}");
+    }
+
     private async Task<string> ClientUuidAsync(string clientId)
     {
         using var request = Authorized(

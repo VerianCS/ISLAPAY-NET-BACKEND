@@ -35,10 +35,33 @@ public class P2PWireTests
     }
 
     [Fact]
-    public void A_method_defaults_to_available()
+    public void A_method_carries_both_sides_of_the_spread()
     {
-        var method = new P2PMethodDto("cup_tm", "CUP Transfermóvil", "CUP", "380");
-        Assert.True(method.Available);
-        Assert.Contains("\"available\":true", JsonSerializer.Serialize(method, Json), StringComparison.Ordinal);
+        var method = new P2PMethodDto(
+            "cup_tm", "CUP Transfermóvil", "CUP",
+            SellRate: "380", BuyRate: "390", Available: true,
+            Minimum: Money.Parse("5.00", Currency.Usd),
+            Maximum: Money.Parse("500.00", Currency.Usd));
+
+        var json = JsonSerializer.Serialize(method, Json);
+
+        // Two rates, not one. A single rate would have IslaPay trading against
+        // itself at par and losing money on every round trip.
+        Assert.Contains("\"sellRate\":\"380\"", json, StringComparison.Ordinal);
+        Assert.Contains("\"buyRate\":\"390\"", json, StringComparison.Ordinal);
+        Assert.Contains("\"available\":true", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_quoted_rate_is_optional_and_absent_when_unset()
+    {
+        // The client may send the rate it showed, and is refused if it moved.
+        // A client that does not is filled at whatever is current, so the
+        // field must not appear when it was not supplied.
+        var json = JsonSerializer.Serialize(
+            new P2PTradeRequest(P2PSide.Buy, Money.Parse("10.00", Currency.Usd), "cup_tm"),
+            Json);
+
+        Assert.DoesNotContain("quotedRate", json, StringComparison.Ordinal);
     }
 }

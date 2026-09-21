@@ -57,8 +57,8 @@ name.
 ## Data
 
 One Postgres cluster, one schema per context: `identity`, `ledger`,
-`marketplace`, plus `platform` for the migration history and `messaging` for
-the outbox. Wallet owns no tables; its state is the ledger's. Nothing reads
+`marketplace`, `p2p`, plus `platform` for the migration history and `messaging`
+for the outbox. Wallet owns no tables; its state is the ledger's. Nothing reads
 across a schema boundary, which is what makes "one database per service" a
 connection string change later rather than a rewrite.
 
@@ -77,9 +77,9 @@ Access to those tables is split, deliberately:
   gapless per-account sequences, append-only triggers. Those have to be visible
   in the code that depends on them, and an ORM's job is to hide them.
 - **Product modules use EF Core as a mapper.** Marketplace is the first.
-  Listings, orders, paging and projections are row-to-object tedium with no
-  concurrency subtlety of their own, and there are seven more modules like it
-  coming. Writing that by hand is several hundred lines per module that nobody
+  Listings, orders, trades, paging and projections are row-to-object tedium
+  with no concurrency subtlety of their own, and there are more modules like
+  them coming. Writing that by hand is several hundred lines per module that nobody
   will read twice.
 
 A module that needs both does what Marketplace does: EF for the queries, and
@@ -116,6 +116,12 @@ Working end to end:
   into escrow and a single-use code is issued to them. The seller scans it and
   escrow pays out — the price less 1% commission. Either party can cancel, and
   a hold nobody scans returns on its own after 72 hours.
+- **P2P.** Instant exchange against IslaPay between the wallet and Cuban
+  pesos. A sell debits the wallet and owes the pesos through escrow until an
+  operator confirms the transfer; a buy posts nothing until an operator
+  confirms the pesos arrived. Both legs are in the ledger, which is why
+  `Currency.Cup` exists — an obligation to send somebody money is a liability,
+  not a column.
 
 The marketplace is where the seam between a module's tables and the ledger's
 transaction had to be faced. The ledger owns its transaction and will not hand
@@ -132,6 +138,8 @@ Exchange and P2P are contracts only — the shapes are agreed in
 `API_CONTRACT.md`, nothing serves them yet. The rates in the wallet response
 are parity placeholders until Exchange exists, and say so in the code.
 
-Money can move between accounts and through a sale. It cannot yet get in or
-out: there is no recharge, no deposit address and no payout. That is the next
-thing that matters, and it is integration work rather than code.
+Money can now get in and out, through P2P — but only as fast as a person
+works the queue, because the Cuban leg is a human sending a transfer. There is
+no console for them, no Transfermóvil integration, and no endpoint that funds
+the desk's pesos. Those are the next things that matter, and the first two are
+more product than code.
