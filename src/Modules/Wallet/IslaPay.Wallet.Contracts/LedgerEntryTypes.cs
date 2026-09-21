@@ -23,10 +23,21 @@ namespace IslaPay.Wallet.Contracts;
 /// </remarks>
 public static class LedgerEntryTypes
 {
-    /// <summary>Money out. <c>meta</c>: <c>destination</c>.</summary>
+    /// <summary>
+    /// Money out. <c>meta</c>: <c>from</c>, <c>to</c>, <c>fromName</c>,
+    /// <c>toName</c>, <c>note</c>.
+    /// </summary>
+    /// <remarks>
+    /// Both sides of the transfer, on both entries, because one posting is
+    /// read by two people and each wants to see the other — the client picks
+    /// whichever is not them. This used to be documented as
+    /// <c>destination</c>, which the server has never sent; the client's
+    /// history therefore read "Enviado" with no name, and nothing failed,
+    /// because a missing meta key is a missing noun rather than an error.
+    /// </remarks>
     public const string TransferSent = "transfer_sent";
 
-    /// <summary>Money in. <c>meta</c>: <c>counterparty</c>.</summary>
+    /// <summary>The same entry seen by the payee. Same <c>meta</c> keys.</summary>
     public const string TransferReceived = "transfer_received";
 
     /// <summary>Money out. <c>meta</c>: <c>from</c>, <c>to</c>, <c>fee</c>, <c>received</c>.</summary>

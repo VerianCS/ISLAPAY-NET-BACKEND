@@ -264,16 +264,36 @@ public sealed class WalletService
     /// Placeholder rates, and knowingly so.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Rates belong to the Exchange context, which has contracts and no
     /// implementation yet. Returning parity here is honest for three
-    /// dollar-denominated instruments and keeps the wallet response the shape
-    /// the client already parses; it is replaced by a call to Exchange the day
-    /// Exchange exists, and this comment is the reminder.
+    /// instruments that are all worth a dollar, and keeps the wallet response
+    /// the shape the client already parses; it is replaced by a call to
+    /// Exchange the day Exchange exists, and this comment is the reminder.
+    /// </para>
+    /// <para>
+    /// Built from <see cref="OpenedOnRegistration"/> rather than typed out.
+    /// Typed out, it said <c>USD_USDC</c> long after USD became E-ISLA, and
+    /// nothing failed: a key the client cannot find falls back to a rate of
+    /// one, which is indistinguishable from parity right up until the day
+    /// parity ends. It also listed three of the six ordered pairs, so half the
+    /// conversions the app offers were quoted from that same silent default.
+    /// A key derived from <see cref="CurrencyExtensions.Code"/> cannot drift
+    /// from the enum, and a loop cannot miss a direction.
+    /// </para>
     /// </remarks>
-    private static Dictionary<string, string> Rates() => new(StringComparer.Ordinal)
+    private static Dictionary<string, string> Rates()
     {
-        ["USD_USDC"] = "1.0000",
-        ["USD_USDT"] = "1.0000",
-        ["USDC_USDT"] = "1.0000",
-    };
+        var rates = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var from in OpenedOnRegistration)
+        {
+            foreach (var to in OpenedOnRegistration)
+            {
+                if (from == to) continue;
+                rates[$"{from.Code()}_{to.Code()}"] = "1.0000";
+            }
+        }
+
+        return rates;
+    }
 }

@@ -24,7 +24,7 @@ Those are four different things and several modules are only the first two.
 
 Platform: Api (4 tests), Data, Messaging (8), Money (54), AspNet, Serialization.
 End to end: 45. Architecture: 8. **256 in total**, against real Postgres,
-RabbitMQ and Keycloak.
+RabbitMQ and Keycloak, plus one capture tool that only runs when asked.
 
 What the whole thing can now do that it could not: **pay money out and take it
 in**, through P2P, provided a person settles the local leg. What it still
@@ -135,6 +135,14 @@ second with the broker deliberately unreachable.
 **Not real yet:** the exchange rates in the wallet response are hard-coded
 parity for the three currencies a customer can hold. It says so in the code.
 They become a call to Exchange the day Exchange exists.
+
+They are now built from `OpenedOnRegistration` rather than typed out, which is
+worth a sentence because typing them out had gone wrong twice at once. The
+keys still read `USD_USDC` long after USD became E-ISLA, and only three of the
+six ordered pairs were listed. Neither failed anything: the client falls back
+to a rate of one for a key it cannot find, and a fallback of one is
+indistinguishable from parity right up until the day parity ends. An
+end-to-end test now asserts the exact six keys.
 
 It publishes `transfer.completed.v1`. **Nothing consumes it** — see Messaging
 below.
@@ -308,15 +316,38 @@ whole of the automation.
 
 ---
 
-## The client, in one paragraph
+## The client
 
-Flutter, 50 live screens, and `USE_MOCKS` defaults to **true**. Authentication
-is wired to this backend for real — token pair, keystore, pre-emptive refresh,
-single-flight, one replay on a 401 — and nothing else is. Every other
-repository answers from an in-memory mock, and `ApiService`'s remaining paths
-point at endpoints this backend does not serve. 52 analyzer exclusions cover
-111 files that no longer compile since the rework dropped `flutter_bloc` and
-`get_it`; they should be deleted rather than excluded.
+Flutter, and `USE_MOCKS` still defaults to **true**.
+
+**Authentication and the wallet** are wired to this backend for real.
+Authentication has been for a while — token pair, keystore, pre-emptive
+refresh, single-flight, one replay on a 401. The wallet is new:
+`GET /v1/me/wallet` and `POST /v1/transfers` behind a `HttpWalletRepository`,
+with the idempotency key sent as a header and kept across the refresh replay,
+and this module's error codes mapped to the client's own failure types. The
+rest of `WalletRepository` — convert, recharge, charge, the P2P trade, a
+deposit address — throws by name rather than reaching an endpoint that is not
+there, because a 404 arriving inside a payment flow reads to a user as "your
+money did not go through".
+
+**The client's wallet tests parse a response this backend really produced.**
+`WireCaptureTests` writes one to disk when `WALLET_CAPTURE_PATH` is set, and
+the file is checked into the Flutter repository. The first capture disagreed
+with this repository twice — the rate keys above, and a transfer's `meta`,
+which carries `to`, `toName`, `from`, `fromName` and `note` where
+`LedgerEntryTypes` had documented a `destination` the server has never sent.
+The client's history rendered "Enviado" with nobody's name in it. Both are
+fixed; the fixture is why they were found.
+
+**The dead code is gone.** 111 files and 20,733 lines of the pre-Riverpod
+generation, which no longer compiled since the rework dropped `flutter_bloc`,
+`get_it` and `equatable`, along with the 52 analyzer exclusions that hid them
+and the three test files that had been failing against them. `ApiService` lost
+fifteen methods aimed at endpoints that do not exist, and the mock backend
+lost the `double`-arithmetic wallet, exchange, cards and notifications nothing
+had called since money became an integer. `flutter analyze` is clean with no
+exclusions at all and 76 tests pass.
 
 ---
 
@@ -326,12 +357,12 @@ point at endpoints this backend does not serve. 52 analyzer exclusions cover
    endpoint to fund the desk is the piece that is missing, and an
    admin-issued credit is the shortcut a pilot actually uses —
    `BuildDeposit` already exists and nothing calls it.
-2. **Wallet on the phone.** Fix the client's paths, map the DTOs, send the
-   idempotency key.
-3. **Marketplace on the phone.** A QR scanner, and the five screens the flow
+2. **Marketplace on the phone.** A QR scanner, and the five screens the flow
    needs.
-4. **Somewhere to run.** Delete the dead Dart, add a Dockerfile, bring the
-   whole thing up with one command.
+3. **Somewhere to run.** A Dockerfile, and the whole thing up with one
+   command.
+
+Wallet on the phone is done, and deleting the dead Dart with it.
 
 After that, and only after that, the question is which of Exchange, P2P,
 recharge and payout comes first — and that answer depends on the company's

@@ -102,6 +102,22 @@ public class RegistrationOpensAWalletTests
             ["EISLA", "USDC", "USDT"],
             wallet.Accounts.Select(a => a.Currency).Order(StringComparer.Ordinal));
 
+        // Every ordered pair, keyed by the currency codes themselves.
+        //
+        // These were typed out, and went on saying `USD_USDC` after USD became
+        // E-ISLA with nothing failing: the client falls back to a rate of one
+        // for a key it cannot find, which is indistinguishable from parity
+        // until the day parity ends. Only three of the six pairs were listed,
+        // so half the conversions the app offers were quoted from that same
+        // silent default.
+        Assert.Equal(
+            [
+                "EISLA_USDC", "EISLA_USDT",
+                "USDC_EISLA", "USDC_USDT",
+                "USDT_EISLA", "USDT_USDC",
+            ],
+            wallet.Rates.Keys.Order(StringComparer.Ordinal));
+
         // Money is an object with a string amount, never a bare number — the
         // one thing the client cannot recover from.
         Assert.Contains("\"amount\":\"0.00\"", body, StringComparison.Ordinal);

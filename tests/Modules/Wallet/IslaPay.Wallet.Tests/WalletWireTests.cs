@@ -23,7 +23,7 @@ public class WalletWireTests
             [
                 new AccountDto("EISLA", Money.Parse("1250.00", Currency.EIsla), "4587"),
             ],
-            Rates: new Dictionary<string, string> { ["USD_USDT"] = "1.0000" },
+            Rates: new Dictionary<string, string> { ["EISLA_USDT"] = "1.0000" },
             Transactions: new CursorPage<TransactionDto>(
                 Items:
                 [
@@ -40,7 +40,7 @@ public class WalletWireTests
 
         Assert.Equal(
             """
-            {"accounts":[{"currency":"EISLA","balance":{"amount":"1250.00","currency":"EISLA"},"cardLast4":"4587"}],"rates":{"USD_USDT":"1.0000"},"transactions":{"items":[{"id":"01JQ","type":"store_purchase","meta":{"merchant":"Tienda Solar"},"amount":{"amount":"-350.000000","currency":"USDT"},"occurredAt":"2026-09-16T14:42:00.000Z"}],"nextCursor":"eyJ"}}
+            {"accounts":[{"currency":"EISLA","balance":{"amount":"1250.00","currency":"EISLA"},"cardLast4":"4587"}],"rates":{"EISLA_USDT":"1.0000"},"transactions":{"items":[{"id":"01JQ","type":"store_purchase","meta":{"merchant":"Tienda Solar"},"amount":{"amount":"-350.000000","currency":"USDT"},"occurredAt":"2026-09-16T14:42:00.000Z"}],"nextCursor":"eyJ"}}
             """,
             json);
     }
