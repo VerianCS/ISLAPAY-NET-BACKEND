@@ -75,6 +75,21 @@ public interface IReadinessCheck
     Task<bool> IsReadyAsync(CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// What a probe is told.
+/// </summary>
+/// <remarks>
+/// A named shape rather than an anonymous one because it is read by two
+/// audiences that both need it stable: an orchestrator deciding whether to
+/// route traffic here, and a person at three in the morning trying to find out
+/// which dependency is down. <paramref name="Checks"/> is absent on the
+/// liveness probe, which answers whether the process is alive and knows
+/// nothing about anything else.
+/// </remarks>
+public sealed record HealthReport(
+    string Status,
+    IReadOnlyDictionary<string, string>? Checks = null);
+
 /// <summary>Whether the database is answering.</summary>
 /// <remarks>
 /// Platform-level rather than per module: every module shares the cluster, so

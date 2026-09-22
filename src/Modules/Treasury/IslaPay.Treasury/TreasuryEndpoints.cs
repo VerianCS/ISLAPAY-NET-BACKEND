@@ -39,10 +39,10 @@ public static class TreasuryEndpoints
             .RequireAuthorization(AdminPolicy);
 
         admin.MapGet("/balances", async (TreasuryService treasury, CancellationToken ct) =>
-            Results.Ok(await treasury.BalancesAsync(ct).ConfigureAwait(false)));
+            TypedResults.Ok(await treasury.BalancesAsync(ct).ConfigureAwait(false)));
 
         admin.MapGet("/reconciliation", async (TreasuryService treasury, CancellationToken ct) =>
-            Results.Ok(await treasury.ReconciliationAsync(ct).ConfigureAwait(false)));
+            TypedResults.Ok(await treasury.ReconciliationAsync(ct).ConfigureAwait(false)));
 
         // The mirror accounts are reached as external:tron, external:bank:bandec.
         // A colon in a path segment is legal and needs no escaping, which keeps
@@ -50,13 +50,13 @@ public static class TreasuryEndpoints
         admin.MapGet("/accounts/{owner}/{currency}/entries", async (
             string owner, string currency, int? limit, string? cursor,
             TreasuryService treasury, CancellationToken ct) =>
-            Results.Ok(await treasury
+            TypedResults.Ok(await treasury
                 .EntriesAsync(owner, currency, limit ?? 50, cursor, ct).ConfigureAwait(false)));
 
         admin.MapPost("/credits", async (
             CreditRequest request, ClaimsPrincipal caller, HttpContext context,
             TreasuryService treasury, CancellationToken ct) =>
-            Results.Ok(await treasury.CreditAsync(
+            TypedResults.Ok(await treasury.CreditAsync(
                 SubjectOf(caller), request, KeyOf(context), ct).ConfigureAwait(false)))
             .WithMetadata(new IdempotentAttribute());
 

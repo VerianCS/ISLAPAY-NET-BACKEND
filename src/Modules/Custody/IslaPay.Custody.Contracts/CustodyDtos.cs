@@ -82,3 +82,24 @@ public sealed record DepositDto(
     int RequiredConfirmations,
     DateTimeOffset FirstSeenAt,
     DateTimeOffset? CreditedAt);
+
+/// <summary>
+/// An asset that can be deposited, on a chain it can be deposited over.
+/// </summary>
+/// <remarks>
+/// The same pair the catalogue holds, narrowed to what a depositing client
+/// needs: no address pattern, because the address is issued by the server and
+/// validated there, and no withdrawal minimum, because nothing here withdraws.
+/// </remarks>
+/// <param name="Contract">
+/// The token's address on that chain, empty for a chain's own coin. Shown so
+/// somebody can check in a block explorer that the token they are about to
+/// send is the one being asked for.
+/// </param>
+public sealed record DepositNetworkDto(
+    string Id,
+    string Name,
+    string Currency,
+    string Contract,
+    int Confirmations,
+    bool MemoRequired);

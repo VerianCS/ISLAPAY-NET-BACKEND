@@ -26,7 +26,7 @@ Those are four different things and several modules are only the first two.
 | Exchange | 0 | 0 | 4 | Contracts only |
 
 Platform: Api (4 tests), Data, Messaging (8), Money (65), AspNet, Serialization.
-End to end: 61. Architecture: 8. **333 in total**, against real Postgres,
+End to end: 65. Architecture: 8. **337 in total**, against real Postgres,
 RabbitMQ and Keycloak, plus three capture tools that only run when asked.
 
 One of the end-to-end tests is the whole journey rather than a slice:
@@ -439,6 +439,29 @@ reporter and the ledger's balance rather than two numbers a test wrote.
 ---
 
 ## Platform
+
+**The published specification.** `GET /openapi/v1.json`, unauthenticated, and
+on by default only in Development — the routes are discoverable by anyone with
+a token, so this is not a secret, but a complete map of the admin surface
+handed to anonymous callers is a convenience for an attacker and for nobody
+else. `OpenApi:Enabled` turns it on where a build machine needs it.
+
+It exists because the admin console is a separate repository that will never
+link against these assemblies: either it generates its client from this
+document or somebody transcribes the shapes from a response, and a
+transcription drifts silently. Two things reflection gets wrong are corrected
+by hand — `Money`, whose .NET shape is nothing like the object it travels as,
+and the bearer scheme, which no endpoint declares on its own — and every
+operation carries one `default` response describing `ApiProblem`, because the
+platform translates every module's refusal into the same body.
+
+Four end-to-end tests hold it: one asserts every route is described, one that
+`Money` is an `{amount, currency}` object, one that the bearer scheme is
+there, and one that no operation answers an untyped 200 and no schema is
+anonymous. That last one found four real gaps the moment it was written — two
+health probes and two auth routes described as returning nothing at all — and
+is what stops the next endpoint written as `Results.Ok(x)` from quietly
+shipping a `void` to whoever generates a client.
 
 **Data.** Npgsql, explicit transactions, and a migrator that applies embedded
 `.sql` in name order under an advisory lock, recording a checksum per script.

@@ -120,6 +120,11 @@ public static class PlatformSetup
 
         AddBearerAuthentication(builder, auth);
 
+        // The specification, so a client in another repository is generated
+        // rather than transcribed. Registered before the modules because the
+        // document is built from whatever routes they go on to map.
+        OpenApiDocument.AddIslaPayOpenApi(builder);
+
         foreach (var module in modules)
         {
             builder.Services.AddSingleton(module);
@@ -211,6 +216,10 @@ public static class PlatformSetup
         foreach (var module in app.Services.GetServices<IIslaPayModule>())
             module.MapEndpoints(app);
 
+        // After the modules, because a document mapped before them would
+        // describe an API with no routes in it.
+        OpenApiDocument.MapIslaPayOpenApi(app);
+
         return app;
     }
 
@@ -280,7 +289,7 @@ public static class PlatformSetup
     /// </remarks>
     private static void MapHealth(WebApplication app)
     {
-        app.MapGet("/health/live", () => Results.Ok(new { status = "ok" }))
+        app.MapGet("/health/live", () => TypedResults.Ok(new HealthReport("ok")))
             .AllowAnonymous();
 
         app.MapGet("/health/ready", async (
@@ -309,10 +318,13 @@ public static class PlatformSetup
             }
 
             return ready
-                ? Results.Ok(new { status = "ready", checks = results })
+                ? Results.Ok(new HealthReport("ready", results))
                 : Results.Json(
-                    new { status = "degraded", checks = results },
+                    new HealthReport("degraded", results),
                     statusCode: StatusCodes.Status503ServiceUnavailable);
-        }).AllowAnonymous();
+        })
+            .Produces<HealthReport>()
+            .Produces<HealthReport>(StatusCodes.Status503ServiceUnavailable)
+            .AllowAnonymous();
     }
 }

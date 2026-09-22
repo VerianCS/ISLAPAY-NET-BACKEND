@@ -2,6 +2,7 @@ using System.Security.Claims;
 using IslaPay.Identity.Contracts;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace IslaPay.Identity;
@@ -26,15 +27,15 @@ public static class AuthEndpoints
         var group = routes.MapGroup("/v1/auth").WithTags("Identity");
 
         group.MapPost("/login", async (LoginRequest request, IdentityService identity, CancellationToken ct) =>
-            Results.Ok(await identity.LoginAsync(request, ct).ConfigureAwait(false)))
+            TypedResults.Ok(await identity.LoginAsync(request, ct).ConfigureAwait(false)))
             .AllowAnonymous();
 
         group.MapPost("/register", async (RegisterRequest request, IdentityService identity, CancellationToken ct) =>
-            Results.Ok(await identity.RegisterAsync(request, ct).ConfigureAwait(false)))
+            TypedResults.Ok(await identity.RegisterAsync(request, ct).ConfigureAwait(false)))
             .AllowAnonymous();
 
         group.MapPost("/token/refresh", async (RefreshRequest request, IdentityService identity, CancellationToken ct) =>
-            Results.Ok(await identity.RefreshAsync(request, ct).ConfigureAwait(false)))
+            TypedResults.Ok(await identity.RefreshAsync(request, ct).ConfigureAwait(false)))
             .AllowAnonymous();
 
         // Verify and resend need a token. The account is taken from it, never
@@ -42,37 +43,39 @@ public static class AuthEndpoints
         // verified hands that state to anyone who can read one SMS.
         group.MapPost("/otp/verify", async (
             OtpVerifyRequest request, ClaimsPrincipal caller, IdentityService identity, CancellationToken ct) =>
-            Results.Ok(await identity.VerifyOtpAsync(SubjectOf(caller), request, ct).ConfigureAwait(false)))
+            TypedResults.Ok(await identity.VerifyOtpAsync(SubjectOf(caller), request, ct).ConfigureAwait(false)))
             .RequireAuthorization();
 
         group.MapPost("/otp/resend", async (
             ClaimsPrincipal caller, IdentityService identity, CancellationToken ct) =>
-            Results.Ok(await identity.ResendOtpAsync(SubjectOf(caller), ct).ConfigureAwait(false)))
+            TypedResults.Ok(await identity.ResendOtpAsync(SubjectOf(caller), ct).ConfigureAwait(false)))
             .RequireAuthorization();
 
         // One path, two steps, told apart by whether a code was sent. The
         // contract lists a single route and the client's screen is a single
         // screen; splitting it here would put a shape in the API that nothing
         // on the other side has.
-        group.MapPost("/password/reset", async (
-            PasswordResetConfirmRequest request, IdentityService identity, CancellationToken ct) =>
+        group.MapPost("/password/reset",
+            async Task<Results<Accepted<OtpResendResponse>, NoContent>> (
+                PasswordResetConfirmRequest request, IdentityService identity,
+                CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(request.Code))
             {
                 var sent = await identity
                     .RequestPasswordResetAsync(new PasswordResetRequest(request.Email), ct)
                     .ConfigureAwait(false);
-                return Results.Accepted(value: sent);
+                return TypedResults.Accepted((string?)null, sent);
             }
 
             await identity.ConfirmPasswordResetAsync(request, ct).ConfigureAwait(false);
-            return Results.NoContent();
+            return TypedResults.NoContent();
         }).AllowAnonymous();
 
         group.MapPost("/logout", async (RefreshRequest request, IdentityService identity, CancellationToken ct) =>
         {
             await identity.LogoutAsync(request.RefreshToken, ct).ConfigureAwait(false);
-            return Results.NoContent();
+            return TypedResults.NoContent();
         }).RequireAuthorization();
 
         return group;

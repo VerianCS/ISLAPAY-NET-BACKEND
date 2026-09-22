@@ -38,15 +38,16 @@ public static class CustodyEndpoints
                     .Where(c => c.IsOnChain)
                     .SelectMany(c => catalog.NetworksFor(c.Code))];
 
-            return Results.Ok(pairs.Where(p => p.Enabled).Select(p => new
-            {
-                id = p.NetworkId,
-                name = p.NetworkName,
-                currency = p.CurrencyCode,
-                contract = p.Contract,
-                confirmations = p.Confirmations,
-                memoRequired = p.MemoRequired,
-            }));
+            return TypedResults.Ok<IReadOnlyList<DepositNetworkDto>>(
+            [
+                .. pairs.Where(p => p.Enabled).Select(p => new DepositNetworkDto(
+                    p.NetworkId,
+                    p.NetworkName,
+                    p.CurrencyCode,
+                    p.Contract,
+                    p.Confirmations,
+                    p.MemoRequired)),
+            ]);
         });
 
         // Asset first, then chain. A network alone no longer names a deposit:
@@ -55,14 +56,14 @@ public static class CustodyEndpoints
         group.MapGet("/addresses/{currency}/{network}", async (
             string currency, string network, ClaimsPrincipal caller,
             CustodyService custody, CancellationToken ct) =>
-            Results.Ok(await custody
+            TypedResults.Ok(await custody
                 .AddressAsync(SubjectOf(caller), currency, network, ct)
                 .ConfigureAwait(false)));
 
         group.MapGet("/deposits", async (
             ClaimsPrincipal caller, CustodyService custody, int? limit,
             CancellationToken ct) =>
-            Results.Ok(await custody
+            TypedResults.Ok(await custody
                 .DepositsAsync(SubjectOf(caller), limit ?? 20, ct)
                 .ConfigureAwait(false)));
 

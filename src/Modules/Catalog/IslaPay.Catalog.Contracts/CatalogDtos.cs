@@ -91,3 +91,52 @@ public sealed record CurrencyOnNetwork(
     bool MemoRequired,
     long? MinimumWithdrawalMinor,
     bool Enabled);
+
+/// <summary>
+/// A currency as a client is told about it.
+/// </summary>
+/// <remarks>
+/// <see cref="CurrencyInfo"/> without <c>SortOrder</c>, which is how the
+/// server decides what order to answer in and not something a client has any
+/// use for. Written down as a type rather than projected inline so the
+/// published specification names it — a client generated against an anonymous
+/// shape gets a class called
+/// <c>AnonymousTypeOfstringAndstringAndint…</c>, which is a transcription
+/// waiting to happen.
+/// </remarks>
+public sealed record CurrencyDto(
+    string Code,
+    string Name,
+    int Scale,
+    string Kind,
+    string Symbol,
+    bool CustomerHoldable,
+    bool Enabled);
+
+/// <summary>A chain, as a client is told about it.</summary>
+/// <remarks>
+/// No address pattern: that is checked on the server, before an address is
+/// ever shown, and a client that had it would be tempted to check instead of
+/// the server rather than as well.
+/// </remarks>
+public sealed record NetworkDto(
+    string Id,
+    string Name,
+    int Confirmations,
+    bool MemoRequired);
+
+/// <summary>
+/// One asset on one chain, as a client is told about it.
+/// </summary>
+/// <param name="MinimumWithdrawal">
+/// In minor units, and absent rather than null when there is none — the wire
+/// omits what it does not know, so a client can tell "no minimum" from "a
+/// minimum of zero".
+/// </param>
+public sealed record CurrencyNetworkDto(
+    string Id,
+    string Name,
+    string TokenStandard,
+    int Confirmations,
+    bool MemoRequired,
+    long? MinimumWithdrawal);

@@ -24,12 +24,12 @@ public static class WalletEndpoints
         // is three chances to fail.
         group.MapGet("/wallet", async (
             ClaimsPrincipal caller, WalletService wallet, CancellationToken ct) =>
-            Results.Ok(await wallet.ReadAsync(SubjectOf(caller), 20, ct).ConfigureAwait(false)));
+            TypedResults.Ok(await wallet.ReadAsync(SubjectOf(caller), 20, ct).ConfigureAwait(false)));
 
         group.MapGet("/transactions", async (
             ClaimsPrincipal caller, WalletService wallet,
             int? limit, string? cursor, CancellationToken ct) =>
-            Results.Ok(await wallet
+            TypedResults.Ok(await wallet
                 .HistoryAsync(SubjectOf(caller), Math.Clamp(limit ?? 20, 1, 100), cursor, ct)
                 .ConfigureAwait(false)));
 
@@ -38,7 +38,7 @@ public static class WalletEndpoints
         routes.MapPost("/v1/transfers", async (
             TransferRequest request, ClaimsPrincipal caller, HttpContext context,
             WalletService wallet, CancellationToken ct) =>
-            Results.Ok(await wallet.TransferAsync(
+            TypedResults.Ok(await wallet.TransferAsync(
                 SubjectOf(caller),
                 request,
                 context.Request.Headers[IdempotencyMiddleware.HeaderName].ToString(),
