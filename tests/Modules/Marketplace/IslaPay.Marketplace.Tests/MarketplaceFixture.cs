@@ -117,6 +117,18 @@ public sealed class FakeLedger : ILedger
         CancellationToken cancellationToken = default) =>
         Task.FromResult(new LedgerEntryPage([], null));
 
+    // The treasury's reads. Nothing in this module asks for them, so they are
+    // stubs rather than a second implementation of the ledger's bookkeeping —
+    // a fake that answered them would be asserting against itself.
+    public Task<IReadOnlyList<HouseBalance>> HouseBalancesAsync(
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<HouseBalance>>([]);
+
+    public Task<LedgerEntryPage> AccountEntriesAsync(
+        AccountRef account, int limit, string? cursor = null,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(new LedgerEntryPage([], null));
+
     public Task<Guid?> FindPostingAsync(
         string idempotencyKey, CancellationToken cancellationToken = default) =>
         Task.FromResult(_byKey.TryGetValue(idempotencyKey, out var id) ? id : (Guid?)null);

@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+    <PackageReference Include="Xunit.SkippableFact" Version="1.5.85" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      The real PostgresLedger, not a fake. Everything this module reports is
+      read out of the ledger, so a treasury tested against a stand-in would be
+      testing the stand-in — and the one thing worth knowing is whether the
+      figures on the console are the figures in the database.
+    -->
+    <ProjectReference Include="..\..\..\..\src\Modules\Treasury\IslaPay.Treasury\IslaPay.Treasury.csproj" />
+    <ProjectReference Include="..\..\..\..\src\Modules\Ledger\IslaPay.Ledger\IslaPay.Ledger.csproj" />
+    <ProjectReference Include="..\..\..\Support\IslaPay.TestSupport\IslaPay.TestSupport.csproj" />
+  </ItemGroup>
+
+</Project>

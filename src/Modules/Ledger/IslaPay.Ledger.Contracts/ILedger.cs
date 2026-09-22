@@ -26,6 +26,26 @@ public sealed record LedgerEntryView(
     DateTimeOffset OccurredAt,
     IReadOnlyDictionary<string, string> Metadata);
 
+/// <summary>
+/// One of IslaPay's own accounts, and what is in it.
+/// </summary>
+/// <remarks>
+/// <para>
+/// "The house" is the platform's accounts — fees, the settlement fund,
+/// escrow, the float — together with the mirrors of what is held outside, at
+/// a bank or on a chain. Customer and merchant accounts are deliberately not
+/// here: those are somebody's money, they are read one holder at a time, and
+/// there is no screen that wants all of them at once.
+/// </para>
+/// <para>
+/// <paramref name="EntryCount"/> comes from the materialised balance rather
+/// than from counting, and it is here because it is what makes the number
+/// checkable: a balance that moves while the count does not is a balance that
+/// was written by something other than a posting.
+/// </para>
+/// </remarks>
+public sealed record HouseBalance(AccountRef Account, Money Balance, long EntryCount);
+
 /// <summary>A page of entries, newest first.</summary>
 /// <param name="NextCursor">Opaque; null on the last page.</param>
 public sealed record LedgerEntryPage(IReadOnlyList<LedgerEntryView> Items, string? NextCursor);
@@ -96,6 +116,44 @@ public interface ILedger
     /// <summary>The user's movements across every currency, newest first.</summary>
     Task<LedgerEntryPage> EntriesAsync(
         string userId,
+        int limit,
+        string? cursor = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Every account IslaPay holds in its own name, and what is in each.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The whole set in one read, because the question it answers is "where is
+    /// the money" and that question is not asked one account at a time. Asking
+    /// <see cref="BalanceOfAsync"/> in a loop would also need the caller to
+    /// already know which accounts exist, and mirrors are named after whatever
+    /// rail opened them — so the loop would quietly miss the ones nobody
+    /// thought to name.
+    /// </para>
+    /// <para>
+    /// An account appears once it has been opened, at zero if nothing has
+    /// touched it yet. Accounts that do not exist are not invented: a row per
+    /// currency in the catalogue would fill the screen with zeroes nobody put
+    /// there.
+    /// </para>
+    /// </remarks>
+    Task<IReadOnlyList<HouseBalance>> HouseBalancesAsync(
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// One account's movements, newest first.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="EntriesAsync"/> answers for a person across every currency
+    /// they hold; this answers for a single account, which is the only useful
+    /// question about the platform's own, since those have no holder to group
+    /// by. An account that has never been opened has no entries rather than
+    /// being an error — the same answer <see cref="BalanceOfAsync"/> gives.
+    /// </remarks>
+    Task<LedgerEntryPage> AccountEntriesAsync(
+        AccountRef account,
         int limit,
         string? cursor = null,
         CancellationToken cancellationToken = default);

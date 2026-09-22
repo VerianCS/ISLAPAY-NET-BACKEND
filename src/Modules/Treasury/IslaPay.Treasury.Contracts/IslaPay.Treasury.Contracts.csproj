@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The Treasury module's public face. Nothing inside the system calls the
+    treasury — it is read by people, through the admin console — so what lives
+    here is the shape of those answers and the codes a refusal carries.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\Platform\IslaPay.Platform.Api\IslaPay.Platform.Api.csproj" />
+    <ProjectReference Include="..\..\..\Platform\IslaPay.Platform.Money\IslaPay.Platform.Money.csproj" />
+  </ItemGroup>
+
+</Project>

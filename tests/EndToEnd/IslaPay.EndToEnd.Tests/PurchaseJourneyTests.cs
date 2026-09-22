@@ -167,6 +167,11 @@ public class PurchaseJourneyTests
         // The money leaves Ana's account now, not when Luis collects. A
         // reservation that left the balance alone would let the same 60 be
         // promised to three sellers.
+        // Escrow is one account for the whole platform, so what this step
+        // proves is the movement, not the total: another test in this
+        // collection may legitimately be holding money in it at the same time.
+        var escrowBefore = await EscrowAsync(host, eIsla);
+
         var order = await Read<OrderDto>(
             await PostAsync(host, buyer, "/v1/orders",
                 new PlaceOrderRequest(Guid.Parse(_listing.Id))));
@@ -179,7 +184,7 @@ public class PurchaseJourneyTests
         // landed yet, and by the time the response comes back it has.
         Assert.Equal(OrderStatuses.Held, order.Status);
         Assert.Equal("10.00", afterHold.ToString());
-        Assert.Equal("50.00", escrow.ToString());
+        Assert.Equal(escrowBefore.MinorUnits + 5000, escrow.MinorUnits);
         Assert.NotNull(order.Code);
 
         // The code is the buyer's proof of payment and nobody else's. Luis
@@ -209,7 +214,9 @@ public class PurchaseJourneyTests
         // 1% de comisión: 50.00 menos 0.50.
         Assert.Equal("49.50", sellerBalance.ToString());
         Assert.Equal("10.00", buyerBalance.ToString());
-        Assert.Equal("0.00", leftInEscrow.ToString());
+        // Back where it started: this order's 50.00 left escrow, and whatever
+        // was there before this test began is still there.
+        Assert.Equal(escrowBefore.MinorUnits, leftInEscrow.MinorUnits);
 
         // Nada se perdió por el camino: lo que salió de Ana está entre Luis y
         // la comisión. Es lo que un libro de doble entrada garantiza, y lo que

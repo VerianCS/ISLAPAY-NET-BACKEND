@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\IslaPay.Treasury.Contracts\IslaPay.Treasury.Contracts.csproj" />
+    <!--
+      Two modules, both through their .Contracts: the ledger holds the money
+      and the catalogue says what a currency is. Marketplace, P2P and
+      Storefront are deliberately absent — what each of them is holding
+      arrives as an IEscrowReporter the host registered, so a fourth context
+      with escrow costs a line in that module and nothing here.
+    -->
+    <ProjectReference Include="..\..\Catalog\IslaPay.Catalog.Contracts\IslaPay.Catalog.Contracts.csproj" />
+    <ProjectReference Include="..\..\Ledger\IslaPay.Ledger.Contracts\IslaPay.Ledger.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\Platform\IslaPay.Platform.AspNet\IslaPay.Platform.AspNet.csproj" />
+  </ItemGroup>
+
+</Project>

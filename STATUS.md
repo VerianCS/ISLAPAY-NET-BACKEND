@@ -22,11 +22,12 @@ Those are four different things and several modules are only the first two.
 | Marketplace | 10 | 2 | 23 | **Works** |
 | P2P | 12 | 3 | 33 | **Works** — needs an operator |
 | Custody | 3 | 2 | 20 | **Works** — needs a custodian |
+| Treasury | 4 | 0 (reads the ledger) | 16 | **Works** — needs a console |
 | Exchange | 0 | 0 | 4 | Contracts only |
 
 Platform: Api (4 tests), Data, Messaging (8), Money (65), AspNet, Serialization.
-End to end: 56. Architecture: 8. **312 in total**, against real Postgres,
-RabbitMQ and Keycloak, plus two capture tools that only run when asked.
+End to end: 61. Architecture: 8. **333 in total**, against real Postgres,
+RabbitMQ and Keycloak, plus three capture tools that only run when asked.
 
 One of the end-to-end tests is the whole journey rather than a slice:
 `PurchaseJourneyTests` registers two strangers, proves both phones, signs in
@@ -37,11 +38,13 @@ difference. Run it with `-l "console;verbosity=detailed"` to read the
 transcript.
 
 What the whole thing can now do that it could not: **pay money out and take it
-in**, through P2P, provided a person settles the local leg. What it still
-cannot do is settle that leg itself — there is no Transfermóvil integration,
-no console for the operator to work the queue in, and no way to top up the
-settlement fund except by posting to the ledger directly. The rail exists; the
-hands on it do not.
+in**, through P2P, provided a person settles the local leg, and **say where
+its own money is and put more in** — the settlement fund and the float are
+topped up through `POST /v1/admin/treasury/credits` rather than by posting to
+the ledger by hand, and escrow is reconciled against what each module says it
+is holding. What it still cannot do is settle that local leg itself: there is
+no Transfermóvil integration and no console for the operator to work the queue
+in. The rail exists; the hands on it do not.
 
 ---
 
@@ -384,6 +387,54 @@ would call, and nothing calls it outside tests. Withdrawals are not here at all
 — phase 3 of the wallet plan.
 
 It publishes `deposit.credited.v1`. **Nothing consumes it.**
+
+---
+
+## Treasury — works, and is the console's whole backend for now
+
+Four routes, all under `/v1/admin/treasury` and all behind one realm role,
+`treasury-admin`:
+
+- `GET /balances` — every account IslaPay holds in its own name: fees, the
+  settlement fund, escrow, the float, and the mirrors of what is held outside.
+  Each carries how many postings have touched it, which is what makes the
+  figure checkable rather than merely displayable.
+- `GET /reconciliation` — escrow, as the ledger has it against what the
+  modules say it should be, per currency, with the per-context breakdown.
+- `GET /accounts/{owner}/{currency}/entries` — one account's history, newest
+  first. Mirrors are reached as `external:tron`, `external:bank:bandec`.
+- `POST /credits` — the one door money enters by. Requires an
+  `Idempotency-Key`, a destination (`float` or `settlement_fund` — not escrow,
+  not fees), a source mirror and a reason; the author comes from the token and
+  never from the body.
+
+**Owns no schema and no money**, which is the design rather than an omission.
+A treasury that kept its own figures would be a second set of books, and the
+second set is always the one that is wrong. Everything it reports it asks
+somebody else for.
+
+**The reconciliation is a band, not an equality.** A module and the ledger
+commit separately, so at any instant some money is mid-movement. Each module
+reports what it is certain of and what is in flight, through
+`IEscrowReporter`; the ledger's escrow is expected to sit between the two.
+Inside with nothing in flight is agreement, inside with something in flight is
+"ask again in a moment", and outside is worth waking somebody for. Counting
+in-flight money either way produces alarms that are not real, and an alarm
+that cries wolf is the one people learn to dismiss.
+
+`MarketplaceEscrowReporter` and `P2PEscrowReporter` exist and are registered.
+Storefront's does not, because Storefront does not.
+
+**What is missing.** There is no way out: a credit can be reversed only by
+posting its inverse, which no route does. No CSV or statement export. The
+balance is not checked against the sum of its own entries — `entry_count` is
+reported so the console can watch it, but nothing recomputes the fold. And no
+console: that is a separate repository, and this is what it will read.
+
+The 16 module tests run against a real Postgres, and 5 end-to-end tests run
+against the host — including one that reconciles escrow against a hold placed
+by a real buyer on a real listing, so what is being compared is a module's
+reporter and the ledger's balance rather than two numbers a test wrote.
 
 ---
 

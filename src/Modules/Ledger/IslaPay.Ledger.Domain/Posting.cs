@@ -11,6 +11,19 @@ public enum TransactionKind
     Payroll,
     Fee,
     Settlement,
+
+    /// <summary>
+    /// Money entering the system from outside, put there on purpose.
+    /// </summary>
+    /// <remarks>
+    /// Distinct from <see cref="Settlement"/>, which is a customer's deposit
+    /// arriving on a rail, because the two are audited by different people
+    /// against different documents: a settlement is reconciled against a chain
+    /// or a payment network, and a funding against a bank statement and
+    /// somebody's decision to move the money. Filing both under one kind would
+    /// make the report that has to find every capital injection unable to.
+    /// </remarks>
+    Funding,
 }
 
 /// <summary>One leg of a transaction: an amount against an account.</summary>

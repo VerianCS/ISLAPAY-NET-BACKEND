@@ -150,6 +150,97 @@ public sealed class PostgresLedger : ILedger
         return Money.FromMinorUnits(result is long minor ? minor : 0, account.Currency);
     }
 
+    public async Task<IReadOnlyList<HouseBalance>> HouseBalancesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _database.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+        // An INNER JOIN, not a LEFT one. A balance row is written the moment
+        // an account is opened, so the two sets are the same in practice and
+        // the join is the cheaper way to say "and what is in it". The ordering
+        // is what the screen wants: the platform's accounts, then the mirrors,
+        // each grouped by name.
+        await using var command = new NpgsqlCommand("""
+            SELECT a.owner_type, a.owner, a.currency, b.minor_units, b.entry_count
+            FROM ledger.accounts a
+            JOIN ledger.balances b ON b.account_id = a.id
+            WHERE a.owner_type IN ('platform', 'external')
+            ORDER BY a.owner_type, a.owner, a.currency;
+            """, connection);
+
+        var balances = new List<HouseBalance>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var currency = Stored(reader.GetString(2));
+            var account = Unresolve(reader.GetString(0), reader.GetString(1), currency);
+            balances.Add(new HouseBalance(
+                account,
+                Money.FromMinorUnits(reader.GetInt64(3), currency),
+                reader.GetInt64(4)));
+        }
+
+        return balances;
+    }
+
+    public async Task<LedgerEntryPage> AccountEntriesAsync(
+        AccountRef account,
+        int limit,
+        string? cursor = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(account);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
+
+        var take = Math.Min(limit, 200) + 1;
+        var after = DecodeCursor(cursor);
+
+        await using var connection = await _database.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand("""
+            SELECT e.id, p.kind, e.currency, e.minor_units, e.occurred_at, p.metadata
+            FROM ledger.entries e
+            JOIN ledger.accounts a ON a.id = e.account_id
+            JOIN ledger.postings p ON p.id = e.posting_id
+            WHERE a.name = @name
+              AND (@after IS NULL OR e.id < @after)
+            ORDER BY e.id DESC
+            LIMIT @take;
+            """, connection);
+        command.Parameters.AddWithValue("name", Resolve(account).ToString());
+        command.Parameters.Add(new NpgsqlParameter("after", NpgsqlDbType.Bigint)
+        {
+            Value = (object?)after ?? DBNull.Value,
+        });
+        command.Parameters.AddWithValue("take", take);
+
+        var items = new List<LedgerEntryView>(take);
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken)
+            .ConfigureAwait(false))
+        {
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                var currency = Stored(reader.GetString(2));
+                items.Add(new LedgerEntryView(
+                    Id: reader.GetInt64(0),
+                    Kind: reader.GetString(1),
+                    Amount: Money.FromMinorUnits(reader.GetInt64(3), currency),
+                    OccurredAt: reader.GetFieldValue<DateTimeOffset>(4).ToUniversalTime(),
+                    Metadata: ReadMetadata(reader.GetString(5))));
+            }
+        }
+
+        string? next = null;
+        if (items.Count == take)
+        {
+            items.RemoveAt(items.Count - 1);
+            next = EncodeCursor(items[^1].Id);
+        }
+
+        return new LedgerEntryPage(items, next);
+    }
+
     public async Task<LedgerEntryPage> EntriesAsync(
         string userId,
         int limit,
@@ -405,6 +496,30 @@ public sealed class PostgresLedger : ILedger
                 + $"states {currency.Scale}.");
         }
     }
+
+    /// <summary>
+    /// A stored row, back into the name a caller outside the module uses.
+    /// </summary>
+    /// <remarks>
+    /// The inverse of <see cref="Resolve"/>, and it exists because the house
+    /// balances are read by asking the database what accounts there are rather
+    /// than by being told. The platform account names are the chart of
+    /// accounts' own (<c>float</c>, not <c>cash_float</c>); an unrecognised one
+    /// throws rather than being passed through, because a name this method
+    /// does not know is a chart entry somebody added without telling the code
+    /// that reads it.
+    /// </remarks>
+    private static AccountRef Unresolve(string ownerType, string owner, Currency currency) =>
+        (ownerType, owner) switch
+        {
+            ("external", _) => AccountRef.External(owner, currency),
+            ("platform", "fees") => AccountRef.Fees(currency),
+            ("platform", "settlement_fund") => AccountRef.SettlementFund(currency),
+            ("platform", "escrow") => AccountRef.Escrow(currency),
+            ("platform", "float") => AccountRef.CashFloat(currency),
+            _ => throw new InvalidOperationException(
+                $"ledger.accounts holds '{ownerType}:{owner}', which the contract has no name for."),
+        };
 
     private static AccountId Resolve(AccountRef account) => account.Owner switch
     {

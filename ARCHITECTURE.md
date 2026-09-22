@@ -193,6 +193,13 @@ P2P desk does.
   TRON — and exactly once however many times a scanner reports the same
   transfer. It owns no keys: addresses come from a port with no production
   implementation, for the reasons set out on `IDepositAddresses`.
+- **Treasury.** Where the platform's own money is, and the one door more of it
+  comes in by. It owns no schema — a treasury with its own copy of the figures
+  is a second set of books, and the second set is always the one that is wrong.
+  It reads the ledger's house accounts, asks every context with escrow what it
+  believes it is holding, and writes exactly one kind of posting: a funding
+  credit, double entry against the mirror of the bank or the capital it came
+  from, signed by whoever's token sent it.
 
 The marketplace is where the seam between a module's tables and the ledger's
 transaction had to be faced. The ledger owns its transaction and will not hand
@@ -212,6 +219,28 @@ module-by-module account of what runs and what does not.
 
 Money can now get in and out, through P2P — but only as fast as a person
 works the queue, because the Cuban leg is a human sending a transfer. There is
-no console for them, no Transfermóvil integration, and no endpoint that funds
-the desk's pesos. Those are the next things that matter, and the first two are
-more product than code.
+no console for them and no Transfermóvil integration; the desk's pesos can
+now be funded, through `POST /v1/admin/treasury/credits`. Those first two are
+the next things that matter, and both are more product than code.
+
+### Reconciling escrow without a hub
+
+Escrow is one platform account per currency and three contexts put money into
+it. The ledger knows the total and knows nothing about why; each module knows
+its own reasons and cannot see the others'. Neither side can check the other
+alone, which is how a lost hold stays invisible: to the user, everything
+looked fine.
+
+The seam is `IEscrowReporter`, in the platform. Each module implements it,
+Treasury takes every implementation the host registered, and Treasury
+references none of them — a treasury that imported each module would be a hub
+every new context had to be wired into, which is the shape this architecture
+exists to avoid.
+
+What it produces is a **band**, not an equality. A module and the ledger
+commit separately, so at any instant some money is mid-movement: counting it
+as held makes a healthy system look long, and counting it as gone makes it
+look short. Both raise alarms that are not real, and an alarm that cries wolf
+is the one people learn to dismiss. So each module reports what it is certain
+of and what is in flight, and the ledger's escrow is expected to sit between
+the two. Outside that band is the thing worth waking somebody for.
