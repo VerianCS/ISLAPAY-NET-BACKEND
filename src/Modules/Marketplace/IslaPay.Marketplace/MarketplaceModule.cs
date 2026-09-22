@@ -52,6 +52,10 @@ public sealed class MarketplaceModule : IIslaPayModule
         });
 
         builder.Services.AddScoped<MarketplaceService>();
+        // Declared so the treasury can check this module's books against the
+        // ledger's. Scoped, like the DbContext it reads from.
+        builder.Services.AddScoped<IEscrowReporter, MarketplaceEscrowReporter>();
+
         builder.Services.AddHostedService<HoldSweeper>();
     }
 

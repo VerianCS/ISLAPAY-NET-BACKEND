@@ -59,6 +59,10 @@ public sealed class P2PModule : IIslaPayModule
         });
 
         builder.Services.AddScoped<P2PService>();
+        // Declared so the treasury can check this module's books against the
+        // ledger's. Scoped, like the DbContext it reads from.
+        builder.Services.AddScoped<IEscrowReporter, P2PEscrowReporter>();
+
         builder.Services.AddHostedService<TradeSweeper>();
 
         // Additive: the platform has already called AddAuthorization, and this
