@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <EmbeddedResource Include="Migrations\**\*.sql" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- EF Core as a mapper only. See ARCHITECTURE.md §Data. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.4" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\IslaPay.Storefront.Contracts\IslaPay.Storefront.Contracts.csproj" />
+    <!--
+      Three other modules, all through their .Contracts: the catalogue says
+      what a currency is, the ledger moves the money, and Identity says
+      whether the buyer has proved a phone. Marketplace is not here and must
+      not be — the two sell different things to different people and share
+      only a pattern, which is not a reason to share code.
+    -->
+    <ProjectReference Include="..\..\Catalog\IslaPay.Catalog.Contracts\IslaPay.Catalog.Contracts.csproj" />
+    <ProjectReference Include="..\..\Ledger\IslaPay.Ledger.Contracts\IslaPay.Ledger.Contracts.csproj" />
+    <ProjectReference Include="..\..\Identity\IslaPay.Identity.Contracts\IslaPay.Identity.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\Platform\IslaPay.Platform.AspNet\IslaPay.Platform.AspNet.csproj" />
+    <ProjectReference Include="..\..\..\Platform\IslaPay.Platform.Data\IslaPay.Platform.Data.csproj" />
+  </ItemGroup>
+
+</Project>
