@@ -20,10 +20,11 @@ Those are four different things and several modules are only the first two.
 | Wallet | 3 | — (reads the ledger) | 8 | **Works** |
 | Marketplace | 10 | 2 | 23 | **Works** |
 | P2P | 12 | 3 | 33 | **Works** — needs an operator |
+| Custody | 3 | 2 | 18 | **Works** — needs a custodian |
 | Exchange | 0 | 0 | 4 | Contracts only |
 
 Platform: Api (4 tests), Data, Messaging (8), Money (54), AspNet, Serialization.
-End to end: 45. Architecture: 8. **256 in total**, against real Postgres,
+End to end: 50. Architecture: 8. **279 in total**, against real Postgres,
 RabbitMQ and Keycloak, plus one capture tool that only runs when asked.
 
 What the whole thing can now do that it could not: **pay money out and take it
@@ -253,6 +254,69 @@ operator console should wake up on.
 
 ---
 
+## Custody — works, and waits for a custodian
+
+Three routes: the networks this build watches, the caller's deposit address on
+one of them, and their deposits.
+
+The first module whose main input is not a request. Everything else here moves
+because somebody called an endpoint; a deposit moves because a stranger
+broadcast a transaction, and the application finds out by reading a block. That
+inverts the failure question from "did we do what was asked" to "have we
+noticed what already happened, and exactly once".
+
+**Owns two tables**, `addresses` and `deposits`, and no money. One address per
+user, network and currency, issued once and kept — a fresh address per deposit
+is better for privacy and worse for everything else, because people save an
+address and send to it again.
+
+Two rules run through all of it.
+
+- **Nothing reaches the ledger before the chain is final.** Nineteen
+  confirmations on TRON, which is where its own consensus stops being
+  reversible. A transfer four blocks deep is one that can still be un-happened,
+  and crediting it early means clawing a balance back from somebody who has
+  already spent it. The rule is a check constraint, not just a branch: a row
+  claiming to be credited below finality is refused by Postgres, so a future
+  caller with a good reason has to argue with the database.
+- **What does reach it lands exactly once.** The scanner re-reads blocks,
+  restarts mid-range, and gets run twice by accident, so the chain's own
+  identifier — `(network, tx hash, output)` — is unique, and seeing a transfer
+  a hundred times is indistinguishable from seeing it once. There is a test
+  that does exactly that.
+
+The same interrupted-credit window as Marketplace and P2P, resolved the same
+way: an in-flight status meaning "a posting for this may exist", one shared
+idempotency key, and asking the ledger rather than guessing. One difference —
+here a scanner pass resolves an in-flight deposit itself rather than waiting
+for the sweeper, because a deposit sitting in `crediting` is somebody's money
+not in their balance. And a stuck deposit is finished rather than merely
+released: one already final and deep is one the scanner has no reason to report
+again, so handing it back to `confirming` would leave it waiting forever.
+
+A reorganisation before finality marks the deposit `orphaned`, and nothing is
+reversed because nothing was posted. After crediting it is not undone at all:
+past finality the loss, if there ever were one, is real and it is an operator's
+problem, not a status change.
+
+**Not real yet, and this is the whole of it: there is no custodian.** Addresses
+come from `IDepositAddresses`, which has no production implementation — the
+host refuses to start without one outside Development, where a deterministic
+fake invents valid-looking addresses that no key exists for. That is a decision
+rather than an omission. What sits behind that interface in production is
+either a custodian or a key-management service, and the difference between them
+is the difference between IslaPay holding customers' private keys and not.
+Deriving keys in this process would make the application's memory, its crash
+dumps, its logs and its backups all places a private key can leak from.
+
+There is also no scanner. `CustodyService.ObserveAsync` is the entry point one
+would call, and nothing calls it outside tests. Withdrawals are not here at all
+— phase 3 of the wallet plan.
+
+It publishes `deposit.credited.v1`. **Nothing consumes it.**
+
+---
+
 ## Platform
 
 **Data.** Npgsql, explicit transactions, and a migrator that applies embedded
@@ -272,7 +336,7 @@ and drop them for want of a binding. Seven event types are published into
 nothing:
 `transfer.completed.v1`, `order.held.v1`, `order.released.v1`,
 `order.refunded.v1`, `trade.committed.v1`, `trade.completed.v1`,
-`trade.refunded.v1` — seven now.
+`trade.refunded.v1`, `deposit.credited.v1` — eight now.
 
 That is not a bug. It is a notifications module that does not exist yet, and
 the events are correct and durable in the meantime. But nobody should read
@@ -353,10 +417,11 @@ exclusions at all and 76 tests pass.
 
 ## What makes this functional, in order
 
-1. **A way in.** P2P buy is one, once somebody works the queue. A treasury
-   endpoint to fund the desk is the piece that is missing, and an
-   admin-issued credit is the shortcut a pilot actually uses —
-   `BuildDeposit` already exists and nothing calls it.
+1. **A way in.** There are two now, and neither is finished for the same
+   shape of reason: P2P buy needs somebody to work the queue, and an on-chain
+   deposit needs a custodian behind `IDepositAddresses` and something reading
+   blocks. The custody one is the shorter path — it needs no person in the
+   loop once it is wired.
 2. **Marketplace on the phone.** A QR scanner, and the five screens the flow
    needs.
 3. **Somewhere to run.** A Dockerfile, and the whole thing up with one

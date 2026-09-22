@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <EmbeddedResource Include="Migrations\**\*.sql" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- EF Core as a mapper only. See ARCHITECTURE.md §Data. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.4" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\IslaPay.Custody.Contracts\IslaPay.Custody.Contracts.csproj" />
+    <!--
+      Two other modules, both through their .Contracts: the ledger credits the
+      money, and Identity says whether the caller has proved a phone. P2P is
+      not here and must not be, even though both cross the boundary between
+      IslaPay and somewhere else — they cross different boundaries and share no
+      code, by rule.
+    -->
+    <ProjectReference Include="..\..\Ledger\IslaPay.Ledger.Contracts\IslaPay.Ledger.Contracts.csproj" />
+    <ProjectReference Include="..\..\Identity\IslaPay.Identity.Contracts\IslaPay.Identity.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\Platform\IslaPay.Platform.AspNet\IslaPay.Platform.AspNet.csproj" />
+    <ProjectReference Include="..\..\..\Platform\IslaPay.Platform.Data\IslaPay.Platform.Data.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -38,6 +38,10 @@
   <Folder Name="/src/Modules/Exchange/">
     <Project Path="src/Modules/Exchange/IslaPay.Exchange.Contracts/IslaPay.Exchange.Contracts.csproj" />
   </Folder>
+  <Folder Name="/src/Modules/Custody/">
+    <Project Path="src/Modules/Custody/IslaPay.Custody/IslaPay.Custody.csproj" />
+    <Project Path="src/Modules/Custody/IslaPay.Custody.Contracts/IslaPay.Custody.Contracts.csproj" />
+  </Folder>
   <Folder Name="/src/Modules/P2P/">
     <Project Path="src/Modules/P2P/IslaPay.P2P/IslaPay.P2P.csproj" />
     <Project Path="src/Modules/P2P/IslaPay.P2P.Contracts/IslaPay.P2P.Contracts.csproj" />
@@ -56,6 +60,7 @@
     <Project Path="tests/Modules/Ledger/IslaPay.Ledger.Domain.Tests/IslaPay.Ledger.Domain.Tests.csproj" />
     <Project Path="tests/Modules/Ledger/IslaPay.Ledger.Tests/IslaPay.Ledger.Tests.csproj" />
     <Project Path="tests/Modules/Marketplace/IslaPay.Marketplace.Tests/IslaPay.Marketplace.Tests.csproj" />
+    <Project Path="tests/Modules/Custody/IslaPay.Custody.Tests/IslaPay.Custody.Tests.csproj" />
     <Project Path="tests/Modules/P2P/IslaPay.P2P.Tests/IslaPay.P2P.Tests.csproj" />
     <Project Path="tests/Modules/Wallet/IslaPay.Wallet.Tests/IslaPay.Wallet.Tests.csproj" />
   </Folder>

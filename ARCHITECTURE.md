@@ -152,6 +152,12 @@ their escrow exists in E-ISLA, USDC and USDT only; a CUP escrow outside P2P
 would mean some other module had started owing pesos, which is a thing only the
 P2P desk does.
 
+- **Custody.** On-chain deposits: an address per user and network, and money
+  that arrives at it. Credited only at finality — nineteen confirmations on
+  TRON — and exactly once however many times a scanner reports the same
+  transfer. It owns no keys: addresses come from a port with no production
+  implementation, for the reasons set out on `IDepositAddresses`.
+
 The marketplace is where the seam between a module's tables and the ledger's
 transaction had to be faced. The ledger owns its transaction and will not hand
 it out, so an order's status and the posting that moved its money are two

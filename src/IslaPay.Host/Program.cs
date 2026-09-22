@@ -1,3 +1,4 @@
+using IslaPay.Custody;
 using IslaPay.Identity;
 using IslaPay.Ledger;
 using IslaPay.Marketplace;
@@ -32,7 +33,8 @@ builder.AddIslaPayPlatform(
     new LedgerModule(),
     new WalletModule(),
     new MarketplaceModule(),
-    new P2PModule());
+    new P2PModule(),
+    new CustodyModule());
 
 var app = builder.Build();
 
