@@ -12,7 +12,21 @@ public sealed class TradeMethod
 
     public string LocalCurrencyCode { get; set; } = string.Empty;
 
+    /// <summary>
+    /// The currency's decimal places, stored beside its code.
+    /// </summary>
+    /// <remarks>
+    /// A row carries what a unit is. Minor units plus a code do not say
+    /// whether 1500000 is one and a half USDT or a million and a half, and the
+    /// answer used to come from a compile-time enum — the thing the currency
+    /// catalogue replaced.
+    /// </remarks>
+    public int LocalScale { get; set; }
+
     public string WalletCurrencyCode { get; set; } = string.Empty;
+
+    /// <summary>See <c>LocalScale</c>.</summary>
+    public int WalletScale { get; set; }
 
     public bool Available { get; set; }
 
@@ -25,9 +39,9 @@ public sealed class TradeMethod
 
     public DateTimeOffset UpdatedAt { get; set; }
 
-    public Currency LocalCurrency => CurrencyExtensions.ParseCode(LocalCurrencyCode);
+    public Currency LocalCurrency => Currency.Of(LocalCurrencyCode, LocalScale);
 
-    public Currency WalletCurrency => CurrencyExtensions.ParseCode(WalletCurrencyCode);
+    public Currency WalletCurrency => Currency.Of(WalletCurrencyCode, WalletScale);
 
     public Money Minimum => Money.FromMinorUnits(MinimumMinor, WalletCurrency);
 
@@ -44,6 +58,9 @@ public sealed class TradeRate
     public string Side { get; set; } = string.Empty;
 
     public string WalletCurrencyCode { get; set; } = string.Empty;
+
+    /// <summary>See <c>LocalScale</c>.</summary>
+    public int WalletScale { get; set; }
 
     /// <summary>
     /// Units of local currency per one wallet unit.
@@ -79,12 +96,26 @@ public sealed class Trade
 
     public string WalletCurrencyCode { get; set; } = string.Empty;
 
+    /// <summary>See <c>LocalScale</c>.</summary>
+    public int WalletScale { get; set; }
+
     /// <summary>The wallet-currency gross the trade is priced on, before the fee.</summary>
     public long AmountMinor { get; set; }
 
     public long FeeMinor { get; set; }
 
     public string LocalCurrencyCode { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The currency's decimal places, stored beside its code.
+    /// </summary>
+    /// <remarks>
+    /// A row carries what a unit is. Minor units plus a code do not say
+    /// whether 1500000 is one and a half USDT or a million and a half, and the
+    /// answer used to come from a compile-time enum — the thing the currency
+    /// catalogue replaced.
+    /// </remarks>
+    public int LocalScale { get; set; }
 
     /// <summary>What the user receives (sell) or must send (buy).</summary>
     public long LocalMinor { get; set; }
@@ -114,9 +145,9 @@ public sealed class Trade
 
     public string? OperatorReference { get; set; }
 
-    public Currency WalletCurrency => CurrencyExtensions.ParseCode(WalletCurrencyCode);
+    public Currency WalletCurrency => Currency.Of(WalletCurrencyCode, WalletScale);
 
-    public Currency LocalCurrency => CurrencyExtensions.ParseCode(LocalCurrencyCode);
+    public Currency LocalCurrency => Currency.Of(LocalCurrencyCode, LocalScale);
 
     public Money Amount => Money.FromMinorUnits(AmountMinor, WalletCurrency);
 
@@ -163,7 +194,9 @@ public sealed class P2PDbContext : DbContext
             method.Property(m => m.Id).HasColumnName("id");
             method.Property(m => m.Name).HasColumnName("name");
             method.Property(m => m.LocalCurrencyCode).HasColumnName("local_currency");
+            method.Property(m => m.LocalScale).HasColumnName("local_scale");
             method.Property(m => m.WalletCurrencyCode).HasColumnName("wallet_currency");
+            method.Property(m => m.WalletScale).HasColumnName("wallet_scale");
             method.Property(m => m.Available).HasColumnName("available");
             method.Property(m => m.Instructions).HasColumnName("instructions");
             method.Property(m => m.MinimumMinor).HasColumnName("minimum_minor");
@@ -183,6 +216,7 @@ public sealed class P2PDbContext : DbContext
             rate.Property(r => r.MethodId).HasColumnName("method_id");
             rate.Property(r => r.Side).HasColumnName("side");
             rate.Property(r => r.WalletCurrencyCode).HasColumnName("wallet_currency");
+            rate.Property(r => r.WalletScale).HasColumnName("wallet_scale");
             rate.Property(r => r.Rate).HasColumnName("rate").HasPrecision(24, 8);
             rate.Property(r => r.EffectiveFrom).HasColumnName("effective_from");
             rate.Property(r => r.SetBy).HasColumnName("set_by");
@@ -200,9 +234,11 @@ public sealed class P2PDbContext : DbContext
             trade.Property(t => t.MethodId).HasColumnName("method_id");
             trade.Property(t => t.MethodName).HasColumnName("method_name");
             trade.Property(t => t.WalletCurrencyCode).HasColumnName("wallet_currency");
+            trade.Property(t => t.WalletScale).HasColumnName("wallet_scale");
             trade.Property(t => t.AmountMinor).HasColumnName("amount_minor");
             trade.Property(t => t.FeeMinor).HasColumnName("fee_minor");
             trade.Property(t => t.LocalCurrencyCode).HasColumnName("local_currency");
+            trade.Property(t => t.LocalScale).HasColumnName("local_scale");
             trade.Property(t => t.LocalMinor).HasColumnName("local_minor");
             trade.Property(t => t.Rate).HasColumnName("rate").HasPrecision(24, 8);
             trade.Property(t => t.Reference).HasColumnName("reference");

@@ -1,3 +1,4 @@
+using IslaPay.TestSupport;
 using System.Text.Json;
 using IslaPay.P2P.Contracts;
 using IslaPay.Platform;
@@ -7,13 +8,13 @@ namespace IslaPay.P2P.Tests;
 
 public class P2PWireTests
 {
-    private static readonly JsonSerializerOptions Json = IslaPayJson.Options;
+    private static readonly JsonSerializerOptions Json = IslaPayJson.Create(TestCurrencies.Scales);
 
     [Fact]
     public void Side_travels_as_a_name_not_an_ordinal()
     {
         var json = JsonSerializer.Serialize(
-            new P2PTradeRequest(P2PSide.Sell, Money.Parse("100.00", Currency.Usdt), "cup_tm"),
+            new P2PTradeRequest(P2PSide.Sell, Money.Parse("100.00", TestCurrencies.Usdt), "cup_tm"),
             Json);
 
         Assert.Equal(
@@ -40,8 +41,8 @@ public class P2PWireTests
         var method = new P2PMethodDto(
             "cup_tm", "CUP Transfermóvil", "CUP",
             SellRate: "380", BuyRate: "390", Available: true,
-            Minimum: Money.Parse("5.00", Currency.EIsla),
-            Maximum: Money.Parse("500.00", Currency.EIsla));
+            Minimum: Money.Parse("5.00", TestCurrencies.EIsla),
+            Maximum: Money.Parse("500.00", TestCurrencies.EIsla));
 
         var json = JsonSerializer.Serialize(method, Json);
 
@@ -59,7 +60,7 @@ public class P2PWireTests
         // A client that does not is filled at whatever is current, so the
         // field must not appear when it was not supplied.
         var json = JsonSerializer.Serialize(
-            new P2PTradeRequest(P2PSide.Buy, Money.Parse("10.00", Currency.EIsla), "cup_tm"),
+            new P2PTradeRequest(P2PSide.Buy, Money.Parse("10.00", TestCurrencies.EIsla), "cup_tm"),
             Json);
 
         Assert.DoesNotContain("quotedRate", json, StringComparison.Ordinal);

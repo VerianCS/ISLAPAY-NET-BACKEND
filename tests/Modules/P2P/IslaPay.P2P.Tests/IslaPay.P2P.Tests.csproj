@@ -20,6 +20,7 @@
       posting and then fail, which is the exact crash the repair logic exists
       for and which a real ledger will not perform on request.
     -->
+    <ProjectReference Include="..\..\..\..\src\Modules\Catalog\IslaPay.Catalog.Contracts\IslaPay.Catalog.Contracts.csproj" />
     <ProjectReference Include="..\..\..\Support\IslaPay.TestSupport\IslaPay.TestSupport.csproj" />
     <ProjectReference Include="..\..\..\..\src\Platform\IslaPay.Platform.Serialization\IslaPay.Platform.Serialization.csproj" />
   </ItemGroup>

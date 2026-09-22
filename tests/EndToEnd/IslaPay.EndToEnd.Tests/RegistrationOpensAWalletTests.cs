@@ -1,3 +1,4 @@
+using IslaPay.TestSupport;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -26,7 +27,7 @@ namespace IslaPay.EndToEnd.Tests;
 public class RegistrationOpensAWalletTests
 {
     private const string Password = "Correct-Horse-9";
-    private static readonly JsonSerializerOptions Json = IslaPayJson.Options;
+    private static readonly JsonSerializerOptions Json = IslaPayJson.Create(TestCurrencies.Scales);
 
     private readonly IslaPayHostFixture _fixture;
 

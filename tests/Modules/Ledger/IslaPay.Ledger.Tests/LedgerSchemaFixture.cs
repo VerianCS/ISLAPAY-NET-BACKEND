@@ -25,8 +25,15 @@ public sealed class LedgerSchemaFixture : PostgresFixture
         ]);
     }
 
-    /// <summary>The ledger under test, with a real outbox behind it.</summary>
-    public PostgresLedger Ledger() => new(Database, new Outbox(Database));
+    /// <summary>
+    /// The ledger under test, with a real outbox and the seeded catalogue.
+    /// </summary>
+    /// <remarks>
+    /// The catalogue is not optional to it any more: the ledger is where the
+    /// rule that no entry exists in an unlisted currency is actually enforced,
+    /// so a ledger built without one could not enforce it.
+    /// </remarks>
+    public PostgresLedger Ledger() => new(Database, new Outbox(Database), new TestCatalog());
 }
 
 [CollectionDefinition(Name)]

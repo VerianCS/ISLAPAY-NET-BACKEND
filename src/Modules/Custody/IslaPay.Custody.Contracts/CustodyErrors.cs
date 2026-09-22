@@ -9,12 +9,13 @@ public static class CustodyErrors
     public const string UnknownNetwork = "unknown_network";
 
     /// <summary>
-    /// The network does not carry that currency. 422.
+    /// That asset is not on that chain, or the pair is switched off. 422.
     /// </summary>
     /// <remarks>
     /// Its own code rather than a validation error, because the request is
-    /// well-formed and the combination is the mistake — asking for a USDC
-    /// address on a network this build only watches for USDT.
+    /// well-formed and the combination is the mistake. USDT is on TRON and on
+    /// Ethereum; USDC is not on TRON at all. Which pairs exist is a row in
+    /// <c>catalog.currency_networks</c>, not something this module decides.
     /// </remarks>
     public const string CurrencyNotOnNetwork = "currency_not_on_network";
 

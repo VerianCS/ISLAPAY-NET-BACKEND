@@ -1,3 +1,4 @@
+using IslaPay.TestSupport;
 using System.Net.Http.Json;
 using System.Text.Json;
 using IslaPay.Identity.Contracts;
@@ -27,7 +28,7 @@ namespace IslaPay.EndToEnd.Tests;
 public class AuthWireShapeTests
 {
     private const string Password = "Correct-Horse-9";
-    private static readonly JsonSerializerOptions Json = IslaPayJson.Options;
+    private static readonly JsonSerializerOptions Json = IslaPayJson.Create(TestCurrencies.Scales);
 
     private readonly IslaPayHostFixture _fixture;
 

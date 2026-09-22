@@ -61,7 +61,7 @@ public sealed class Posting
             if (leg.Amount.Currency != leg.Account.Currency)
             {
                 throw new CurrencyMismatchException(
-                    $"Leg posts {leg.Amount.Currency.Code()} to {leg.Account}, " +
+                    $"Leg posts {leg.Amount.Currency.Code} to {leg.Account}, " +
                     "which is not that account's currency.");
             }
 
@@ -82,7 +82,7 @@ public sealed class Posting
             if (!sum.IsZero)
             {
                 throw new UnbalancedPostingException(
-                    $"{group.Key.Code()} legs sum to {sum}, not zero. " +
+                    $"{group.Key.Code} legs sum to {sum}, not zero. " +
                     "Every currency must balance within a posting.");
             }
         }

@@ -1,3 +1,4 @@
+using IslaPay.Catalog.Contracts;
 using IslaPay.Custody.Contracts;
 using IslaPay.Identity.Contracts;
 using IslaPay.Ledger.Contracts;
@@ -49,6 +50,13 @@ public sealed class CustodyFixture : PostgresFixture
             "TRUNCATE custody.deposits, custody.addresses RESTART IDENTITY CASCADE;");
     }
 
+    /// <summary>The seeded catalogue, as every test here sees it.</summary>
+    public static ICurrencyCatalog Catalog { get; } = new TestCatalog();
+
+    /// <summary>USDT on TRON: the one pair this build has switched on.</summary>
+    public static CurrencyOnNetwork Tron { get; } =
+        Catalog.OnNetwork(CurrencyCodes.Usdt, "tron")!;
+
     public CustodyService Service(
         FakeLedger ledger,
         FakeDirectory directory,
@@ -57,6 +65,7 @@ public sealed class CustodyFixture : PostgresFixture
         new(
             Context(),
             ledger,
+            Catalog,
             directory,
             addresses ?? new DevelopmentDepositAddresses(),
             clock ?? TimeProvider.System);
@@ -170,7 +179,7 @@ public sealed class FakeLedger : ILedger
             if (sum != 0)
             {
                 throw new InvalidOperationException(
-                    $"The {group.Key.Code()} legs sum to {sum}, not zero.");
+                    $"The {group.Key.Code} legs sum to {sum}, not zero.");
             }
         }
 

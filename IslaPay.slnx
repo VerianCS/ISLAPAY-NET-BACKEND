@@ -38,6 +38,10 @@
   <Folder Name="/src/Modules/Exchange/">
     <Project Path="src/Modules/Exchange/IslaPay.Exchange.Contracts/IslaPay.Exchange.Contracts.csproj" />
   </Folder>
+  <Folder Name="/src/Modules/Catalog/">
+    <Project Path="src/Modules/Catalog/IslaPay.Catalog/IslaPay.Catalog.csproj" />
+    <Project Path="src/Modules/Catalog/IslaPay.Catalog.Contracts/IslaPay.Catalog.Contracts.csproj" />
+  </Folder>
   <Folder Name="/src/Modules/Custody/">
     <Project Path="src/Modules/Custody/IslaPay.Custody/IslaPay.Custody.csproj" />
     <Project Path="src/Modules/Custody/IslaPay.Custody.Contracts/IslaPay.Custody.Contracts.csproj" />
@@ -55,6 +59,7 @@
     <Project Path="tests/Platform/IslaPay.Platform.Money.Tests/IslaPay.Platform.Money.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Modules/">
+    <Project Path="tests/Modules/Catalog/IslaPay.Catalog.Tests/IslaPay.Catalog.Tests.csproj" />
     <Project Path="tests/Modules/Exchange/IslaPay.Exchange.Tests/IslaPay.Exchange.Tests.csproj" />
     <Project Path="tests/Modules/Identity/IslaPay.Identity.Tests/IslaPay.Identity.Tests.csproj" />
     <Project Path="tests/Modules/Ledger/IslaPay.Ledger.Domain.Tests/IslaPay.Ledger.Domain.Tests.csproj" />

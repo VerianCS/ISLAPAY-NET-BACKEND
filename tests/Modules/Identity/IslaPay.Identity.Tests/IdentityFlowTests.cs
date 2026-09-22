@@ -458,7 +458,7 @@ public sealed class IdentityFlowTests : IDisposable
 
     // ------------------------------------------------------------------ helpers
 
-    private static readonly JsonSerializerOptions Json = IslaPayJson.Options;
+    private static readonly JsonSerializerOptions Json = IslaPayJson.Create(TestCurrencies.Scales);
 
     private (HttpClient Client, RecordingOtpSender Codes) Ready()
     {

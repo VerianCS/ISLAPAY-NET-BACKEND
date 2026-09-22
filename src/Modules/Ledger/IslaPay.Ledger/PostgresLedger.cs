@@ -2,6 +2,7 @@ using System.Data;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using IslaPay.Catalog.Contracts;
 using IslaPay.Ledger.Contracts;
 using IslaPay.Ledger.Domain;
 using IslaPay.Platform;
@@ -35,16 +36,40 @@ public sealed class PostgresLedger : ILedger
 {
     private readonly IDatabase _database;
     private readonly IOutbox _outbox;
+    private readonly ICurrencyCatalog _catalog;
     private readonly TimeProvider _clock;
 
-    public PostgresLedger(IDatabase database, IOutbox outbox, TimeProvider? clock = null)
+    public PostgresLedger(
+        IDatabase database,
+        IOutbox outbox,
+        ICurrencyCatalog catalog,
+        TimeProvider? clock = null)
     {
         ArgumentNullException.ThrowIfNull(database);
         ArgumentNullException.ThrowIfNull(outbox);
+        ArgumentNullException.ThrowIfNull(catalog);
         _database = database;
         _outbox = outbox;
+        _catalog = catalog;
         _clock = clock ?? TimeProvider.System;
     }
+
+    /// <summary>
+    /// What a stored code means, including for a currency since withdrawn.
+    /// </summary>
+    /// <remarks>
+    /// Reading, not writing, so it asks <c>Describe</c> rather than
+    /// <c>Require</c>: an entry posted in a currency that has since been
+    /// switched off is still an entry, and a statement that threw rather than
+    /// showing it would be worse than useless. A code the catalogue has never
+    /// heard of is different — that is a row nothing can interpret, and
+    /// guessing a scale for it would misstate the amount by orders of
+    /// magnitude.
+    /// </remarks>
+    private Currency Stored(string code) =>
+        _catalog.Describe(code)?.Currency
+        ?? throw new UnknownCurrencyException(
+            code, "it is stored in the ledger but no longer listed in catalog.currencies.");
 
     // ------------------------------------------------------------------ reads
 
@@ -55,6 +80,13 @@ public sealed class PostgresLedger : ILedger
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(userId);
         ArgumentNullException.ThrowIfNull(currencies);
+
+        // Checked before the transaction opens, and not only when money later
+        // moves. An account is a promise that a balance in this currency can
+        // exist; opening one in a currency the catalogue does not allow would
+        // show the customer a wallet they can never use, and the refusal would
+        // arrive at their first transfer instead of here.
+        foreach (var currency in currencies) RequireListed(currency);
 
         await _database.InTransactionAsync(async (connection, transaction, ct) =>
         {
@@ -87,7 +119,7 @@ public sealed class PostgresLedger : ILedger
 
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            var currency = CurrencyExtensions.ParseCode(reader.GetString(0));
+            var currency = Stored(reader.GetString(0));
             balances.Add(new AccountBalance(
                 currency, Money.FromMinorUnits(reader.GetInt64(1), currency)));
         }
@@ -160,7 +192,7 @@ public sealed class PostgresLedger : ILedger
         {
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
-                var currency = CurrencyExtensions.ParseCode(reader.GetString(2));
+                var currency = Stored(reader.GetString(2));
                 items.Add(new LedgerEntryView(
                     Id: reader.GetInt64(0),
                     Kind: reader.GetString(1),
@@ -193,6 +225,8 @@ public sealed class PostgresLedger : ILedger
 
         foreach (var leg in request.Legs)
         {
+            RequireListed(leg.Amount.Currency);
+
             var account = Resolve(leg.Account);
             references[account.ToString()] = leg.Account;
             legs.Add(new Leg(account, leg.Amount));
@@ -335,6 +369,43 @@ public sealed class PostgresLedger : ILedger
     // ------------------------------------------------------------------ plumbing
 
     /// <summary>Turns a contract reference into the domain's account identity.</summary>
+    /// <summary>
+    /// Refuses a leg in a currency the catalogue will not have.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The outermost edge of the change that made currencies a table. The
+    /// ledger is where every movement of money in this system ends up, so it
+    /// is the one place that can guarantee the invariant: no entry is ever
+    /// written in a currency nobody listed, or one that has been switched off.
+    /// A check in each calling module would be six checks, and the one that
+    /// was forgotten would be the one that mattered.
+    /// </para>
+    /// <para>
+    /// The scale is checked too, and it is the subtler half. A code alone does
+    /// not say what <c>1500000</c> is worth; a <see cref="Currency"/> carrying
+    /// a scale the catalogue disagrees with would post an amount wrong by a
+    /// factor of ten thousand and balance perfectly while doing it.
+    /// </para>
+    /// </remarks>
+    private void RequireListed(Currency currency)
+    {
+        if (!currency.IsDefined)
+        {
+            throw new UnknownCurrencyException(
+                null, "a posting leg carries no currency at all.");
+        }
+
+        var listed = _catalog.Require(currency.Code);
+        if (listed.Scale != currency.Scale)
+        {
+            throw new UnknownCurrencyException(
+                currency.Code,
+                $"it is accounted in {listed.Scale} decimal places and the posting "
+                + $"states {currency.Scale}.");
+        }
+    }
+
     private static AccountId Resolve(AccountRef account) => account.Owner switch
     {
         AccountOwner.User => AccountId.User(account.Id, account.Currency),
@@ -408,7 +479,7 @@ public sealed class PostgresLedger : ILedger
         command.Parameters.AddWithValue("name", account.ToString());
         command.Parameters.AddWithValue("owner_type", account.OwnerType.ToString().ToLowerInvariant());
         command.Parameters.AddWithValue("owner", account.Owner);
-        command.Parameters.AddWithValue("currency", account.Currency.Code());
+        command.Parameters.AddWithValue("currency", account.Currency.Code);
         command.Parameters.AddWithValue("account_type", account.Type.ToString().ToLowerInvariant());
         command.Parameters.AddWithValue("may_go_negative", account.MayGoNegative);
 
@@ -511,7 +582,7 @@ public sealed class PostgresLedger : ILedger
         command.Parameters.AddWithValue("posting", posting.Id);
         command.Parameters.AddWithValue("account", accountId);
         command.Parameters.AddWithValue("seq", seq);
-        command.Parameters.AddWithValue("currency", leg.Amount.Currency.Code());
+        command.Parameters.AddWithValue("currency", leg.Amount.Currency.Code);
         command.Parameters.AddWithValue("minor_units", leg.Amount.MinorUnits);
         command.Parameters.AddWithValue("occurred_at", posting.PostedAt);
 

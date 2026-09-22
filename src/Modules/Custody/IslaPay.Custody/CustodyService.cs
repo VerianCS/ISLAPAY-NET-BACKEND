@@ -1,3 +1,4 @@
+using IslaPay.Catalog.Contracts;
 using IslaPay.Custody.Contracts;
 using IslaPay.Identity.Contracts;
 using IslaPay.Ledger.Contracts;
@@ -43,6 +44,7 @@ public sealed class CustodyService
 {
     private readonly CustodyDbContext _db;
     private readonly ILedger _ledger;
+    private readonly ICurrencyCatalog _catalog;
     private readonly IUserDirectory _directory;
     private readonly IDepositAddresses _addresses;
     private readonly TimeProvider _clock;
@@ -50,17 +52,20 @@ public sealed class CustodyService
     public CustodyService(
         CustodyDbContext db,
         ILedger ledger,
+        ICurrencyCatalog catalog,
         IUserDirectory directory,
         IDepositAddresses addresses,
         TimeProvider clock)
     {
         ArgumentNullException.ThrowIfNull(db);
         ArgumentNullException.ThrowIfNull(ledger);
+        ArgumentNullException.ThrowIfNull(catalog);
         ArgumentNullException.ThrowIfNull(directory);
         ArgumentNullException.ThrowIfNull(addresses);
         ArgumentNullException.ThrowIfNull(clock);
         _db = db;
         _ledger = ledger;
+        _catalog = catalog;
         _directory = directory;
         _addresses = addresses;
         _clock = clock;
@@ -81,27 +86,52 @@ public sealed class CustodyService
     // ----------------------------------------------------------- addresses
 
     /// <summary>
-    /// The caller's address on a network, issuing one the first time.
+    /// The caller's address for one asset on one chain, issuing one the first
+    /// time.
     /// </summary>
     /// <remarks>
+    /// <para>
+    /// An asset <i>and</i> a chain, because a chain carries several assets and
+    /// an asset lives on several chains. Asking for "a TRON address" was only
+    /// ever coherent while the enum pinned one currency to each network, and
+    /// the day USDC joins USDT on TRON that question has two right answers.
+    /// </para>
+    /// <para>
     /// Behind the same phone gate as every other way money moves. A deposit
     /// address is not a payment, but it is the thing that attributes incoming
     /// money to a person, and handing one out to an account nobody has proved
     /// is how a service becomes a laundry.
+    /// </para>
     /// </remarks>
     public async Task<DepositAddressDto> AddressAsync(
-        string userId, string networkId, CancellationToken cancellationToken = default)
+        string userId, string currencyCode, string networkId,
+        CancellationToken cancellationToken = default)
     {
-        var network = CustodyNetworks.Find(networkId)
-            ?? throw CustodyException.UnknownNetwork(networkId);
+        // Two different refusals, because they mean different things to
+        // whoever is reading them. A chain nobody has heard of is a 404: the
+        // client asked for something that does not exist. A chain that exists
+        // and does not carry this asset — or carries it and is switched off —
+        // is a 422: the request was well formed and the answer is no.
+        var known = _catalog.Networks.Any(n =>
+            string.Equals(n.Id, networkId?.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (!known) throw CustodyException.UnknownNetwork(networkId);
+
+        var network = _catalog.OnNetwork(currencyCode, networkId);
+        if (network is not { Enabled: true })
+        {
+            throw CustodyException.CurrencyNotOnNetwork(currencyCode, networkId);
+        }
 
         await RequireVerifiedPhoneAsync(userId, cancellationToken).ConfigureAwait(false);
 
-        var code = network.Currency.Code();
+        var currency = _catalog.Require(network.CurrencyCode);
+        var code = currency.Code;
+        var id = network.NetworkId;
+
         var existing = await _db.Addresses
             .AsNoTracking()
             .SingleOrDefaultAsync(
-                a => a.UserId == userId && a.Network == network.Id && a.CurrencyCode == code,
+                a => a.UserId == userId && a.Network == id && a.CurrencyCode == code,
                 cancellationToken)
             .ConfigureAwait(false);
 
@@ -118,15 +148,16 @@ public sealed class CustodyService
         {
             throw CustodyException.AddressUnavailable(
                 $"The custodian returned '{issued.Address}', which is not a "
-                + $"{network.Name} address.");
+                + $"{network.NetworkName} address.");
         }
 
         var row = new DepositAddress
         {
             Id = Guid.NewGuid(),
             UserId = userId,
-            Network = network.Id,
+            Network = id,
             CurrencyCode = code,
+            CurrencyScale = currency.Scale,
             Address = issued.Address,
             CustodianRef = issued.CustodianRef,
             IssuedAt = _clock.GetUtcNow(),
@@ -147,7 +178,7 @@ public sealed class CustodyService
             var winner = await _db.Addresses
                 .AsNoTracking()
                 .SingleAsync(
-                    a => a.UserId == userId && a.Network == network.Id && a.CurrencyCode == code,
+                    a => a.UserId == userId && a.Network == id && a.CurrencyCode == code,
                     cancellationToken)
                 .ConfigureAwait(false);
             return Project(winner, network);
@@ -197,13 +228,21 @@ public sealed class CustodyService
     {
         ArgumentNullException.ThrowIfNull(seen);
 
-        var network = CustodyNetworks.Find(seen.Network)
-            ?? throw CustodyException.UnknownNetwork(seen.Network);
+        var code = seen.Amount.Currency.Code;
+        var network = _catalog.OnNetwork(code, seen.Network)
+            ?? throw CustodyException.CurrencyNotOnNetwork(code, seen.Network);
 
-        if (seen.Amount.Currency != network.Currency)
+        // The scanner states a scale along with the amount, and a scale that
+        // disagrees with the catalogue is not a rounding difference: it is a
+        // credit wrong by a factor of ten thousand. The catalogue is the one
+        // that decides, and a database trigger stops it ever changing.
+        var currency = _catalog.Require(code);
+        if (seen.Amount.Currency.Scale != currency.Scale)
         {
-            throw CustodyException.CurrencyNotOnNetwork(
-                network, seen.Amount.Currency.Code());
+            throw new ArgumentException(
+                $"{code} is accounted in {currency.Scale} decimal places and the "
+                + $"transfer states {seen.Amount.Currency.Scale}.",
+                nameof(seen));
         }
 
         if (!seen.Amount.IsPositive)
@@ -217,7 +256,7 @@ public sealed class CustodyService
         var address = await _db.Addresses
             .AsNoTracking()
             .SingleOrDefaultAsync(
-                a => a.Network == network.Id && a.Address == seen.Address,
+                a => a.Network == network.NetworkId && a.Address == seen.Address,
                 cancellationToken)
             .ConfigureAwait(false);
 
@@ -498,14 +537,14 @@ public sealed class CustodyService
 
     private async Task<Deposit> FindOrRecordAsync(
         ObservedTransfer seen,
-        CustodyNetwork network,
+        CurrencyOnNetwork network,
         DepositAddress address,
         CancellationToken cancellationToken)
     {
         var existing = await _db.Deposits
             .AsNoTracking()
             .SingleOrDefaultAsync(
-                d => d.Network == network.Id
+                d => d.Network == network.NetworkId
                      && d.TxHash == seen.TxHash
                      && d.OutputIndex == seen.OutputIndex,
                 cancellationToken)
@@ -519,8 +558,9 @@ public sealed class CustodyService
             Id = Guid.NewGuid(),
             UserId = address.UserId,
             AddressId = address.Id,
-            Network = network.Id,
-            CurrencyCode = network.Currency.Code(),
+            Network = network.NetworkId,
+            CurrencyCode = seen.Amount.Currency.Code,
+            CurrencyScale = seen.Amount.Currency.Scale,
             TxHash = seen.TxHash,
             OutputIndex = seen.OutputIndex,
             AmountMinor = seen.Amount.MinorUnits,
@@ -549,7 +589,7 @@ public sealed class CustodyService
             return await _db.Deposits
                 .AsNoTracking()
                 .SingleAsync(
-                    d => d.Network == network.Id
+                    d => d.Network == network.NetworkId
                          && d.TxHash == seen.TxHash
                          && d.OutputIndex == seen.OutputIndex,
                     cancellationToken)
@@ -564,10 +604,10 @@ public sealed class CustodyService
         if (user is null || !user.PhoneVerified) throw CustodyException.PhoneNotVerified();
     }
 
-    private static DepositAddressDto Project(DepositAddress row, CustodyNetwork network) =>
+    private static DepositAddressDto Project(DepositAddress row, CurrencyOnNetwork network) =>
         new(
             Network: row.Network,
-            NetworkName: network.Name,
+            NetworkName: network.NetworkName,
             Currency: row.CurrencyCode,
             Address: row.Address,
             Confirmations: network.Confirmations);

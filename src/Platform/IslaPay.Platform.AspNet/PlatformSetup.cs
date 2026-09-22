@@ -100,15 +100,23 @@ public static class PlatformSetup
         // The wire format comes from the platform, so a response from this
         // host and a response asserted in a module's contract test cannot be
         // serialised differently.
-        builder.Services.ConfigureHttpJsonOptions(options =>
-        {
-            var shared = IslaPayJson.Options;
-            options.SerializerOptions.PropertyNamingPolicy = shared.PropertyNamingPolicy;
-            options.SerializerOptions.DefaultIgnoreCondition = shared.DefaultIgnoreCondition;
-            options.SerializerOptions.UnmappedMemberHandling = shared.UnmappedMemberHandling;
-            foreach (var converter in shared.Converters)
-                options.SerializerOptions.Converters.Add(converter);
-        });
+        //
+        // Built from the container rather than from the static options,
+        // because reading a Money needs to know what a currency code means and
+        // only the catalogue knows that. Configure<T> resolves when the
+        // options are first used, which is after start-up — so this does not
+        // depend on the platform being wired before the module that registers
+        // the catalogue, and it cannot be, since modules are added below.
+        builder.Services.AddOptions<Microsoft.AspNetCore.Http.Json.JsonOptions>()
+            .Configure<ICurrencyScales>((options, scales) =>
+            {
+                var shared = IslaPayJson.Create(scales);
+                options.SerializerOptions.PropertyNamingPolicy = shared.PropertyNamingPolicy;
+                options.SerializerOptions.DefaultIgnoreCondition = shared.DefaultIgnoreCondition;
+                options.SerializerOptions.UnmappedMemberHandling = shared.UnmappedMemberHandling;
+                foreach (var converter in shared.Converters)
+                    options.SerializerOptions.Converters.Add(converter);
+            });
 
         AddBearerAuthentication(builder, auth);
 
@@ -137,6 +145,15 @@ public static class PlatformSetup
                 app.Services.GetRequiredService<IDatabase>(),
                 [.. app.Services.GetServices<MigrationSet>()],
                 cancellationToken).ConfigureAwait(false);
+        }
+
+        // After the tables exist and before a single route is mapped. A module
+        // that has to load something before it can answer — the currency
+        // catalogue, which every other module reads synchronously — does it
+        // here, where being too late is impossible.
+        foreach (var task in app.Services.GetServices<IStartupTask>())
+        {
+            await task.RunAsync(cancellationToken).ConfigureAwait(false);
         }
 
         // Explicit, because the idempotency middleware needs two things that

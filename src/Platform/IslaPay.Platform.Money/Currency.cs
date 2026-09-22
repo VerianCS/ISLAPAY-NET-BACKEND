@@ -1,125 +1,171 @@
+using System.Text.RegularExpressions;
+
 namespace IslaPay.Platform;
 
 /// <summary>
-/// The currencies IslaPay holds.
+/// A currency, as an amount needs to know it: a code and the number of decimal
+/// places it is accounted in.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <see cref="EIsla"/> is the application's own unit and the one a balance is
-/// usually quoted in. It is not a token and it is not on a chain: it is a
-/// liability of IslaPay, redeemable one for one against a stablecoin subject
-/// to the settlement fund having it. It is only ever issued by converting a
-/// deposit, by a P2P purchase, or by a treasury credit an operator signs for —
-/// never by anything a customer can call.
+/// This was an <c>enum</c> with four members, and that was the single thing
+/// stopping the system from being multi-currency. An enum is a closed set
+/// decided at compile time: adding the Mexican peso meant a deploy, adding
+/// forty of them meant a deploy and a migration of every account name, and
+/// switching one off for a jurisdiction was not expressible at all. A
+/// catalogue in the database is none of those things.
 /// </para>
 /// <para>
-/// <see cref="Cup"/> is the odd one out. No user account is ever opened in it:
-/// it is the platform's own currency for the local leg of a P2P trade, held by
-/// the settlement fund and owed through escrow until an operator pays it out.
-/// A customer sees an amount in CUP; they never have a balance in it, which is
-/// why it is absent from <c>WalletService.OpenedOnRegistration</c>. It belongs
-/// to P2P alone — the exchange and custody never touch it.
+/// What is left here is only what arithmetic and rendering need. Deliberately
+/// <b>not</b> here: whether a currency is on a chain, whether a customer may
+/// hold it, whether it is switched on. Those are policy, they change without a
+/// deploy, and a type that answered them from its own fields would be a second
+/// catalogue quietly disagreeing with the first. Ask <c>ICurrencyCatalog</c>.
+/// </para>
+/// <para>
+/// The scale travels with the code on purpose. A <see cref="Money"/> that has
+/// to look its scale up is a <see cref="Money"/> that can be rendered
+/// differently in two places, and the two places are usually a receipt and a
+/// ledger.
 /// </para>
 /// </remarks>
-public enum Currency
+public readonly record struct Currency
 {
     /// <summary>
-    /// E-ISLA, the application's unit of account. Internal, not on any chain.
-    /// </summary>
-    EIsla,
-
-    /// <summary>USD Coin. On-chain, so it carries a network.</summary>
-    Usdc,
-
-    /// <summary>Tether. On-chain, so it carries a network.</summary>
-    Usdt,
-
-    /// <summary>
-    /// Cuban peso. The platform's only, for the off-platform leg of a trade.
-    /// </summary>
-    Cup,
-}
-
-public static class CurrencyExtensions
-{
-    /// <summary>
-    /// Decimal places the currency is accounted in. This is the whole reason
-    /// <see cref="Money"/> can be an integer: a balance is always a whole
-    /// number of these units, never a fraction of one.
+    /// The most decimal places any currency here may have.
     /// </summary>
     /// <remarks>
-    /// E-ISLA is accounted in hundredths because it is redeemable one for one
-    /// against a dollar-denominated stablecoin and a unit a customer cannot be
-    /// shown is a unit that gets lost in rounding. The stablecoins keep their
-    /// own six, which is what their contracts use; converting between the two
-    /// scales is <see cref="Money.ConvertTo"/>'s problem, not this one's.
+    /// Eighteen is what an ERC-20 may declare, and it is also where
+    /// <c>long</c> minor units stop being able to hold a meaningful amount —
+    /// one whole unit of an 18-decimal asset is already 10^18, most of the
+    /// range. Anything that needs more than this needs a wider integer, which
+    /// is a decision rather than a configuration value.
     /// </remarks>
-    public static int Scale(this Currency currency) => currency switch
+    public const int MaximumScale = 18;
+
+    private static readonly Regex CodeShape = new(
+        "^[A-Z0-9]{2,12}$", RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
+
+    private Currency(string code, int scale)
     {
-        Currency.EIsla => 2,
-        Currency.Usdc => 6,
-        Currency.Usdt => 6,
-        Currency.Cup => 2,
-        _ => throw new ArgumentOutOfRangeException(nameof(currency), currency, null),
-    };
-
-    /// <summary>The code used on the wire and in the UI.</summary>
-    public static string Code(this Currency currency) => currency switch
-    {
-        Currency.EIsla => "EISLA",
-        Currency.Usdc => "USDC",
-        Currency.Usdt => "USDT",
-        Currency.Cup => "CUP",
-        _ => throw new ArgumentOutOfRangeException(nameof(currency), currency, null),
-    };
-
-    /// <summary>
-    /// Whether the currency settles on a chain, and therefore carries a network.
-    /// </summary>
-    /// <remarks>
-    /// Named rather than negated. This used to read <c>!= Usd</c>, which was
-    /// true of everything that was not the internal unit and became wrong the
-    /// moment a second off-chain currency existed — CUP moves through a Cuban
-    /// bank, not a blockchain, and E-ISLA moves nowhere at all.
-    /// </remarks>
-    public static bool IsOnChain(this Currency currency) =>
-        currency is Currency.Usdc or Currency.Usdt;
-
-    /// <summary>
-    /// Whether a customer may hold a balance in it.
-    /// </summary>
-    /// <remarks>
-    /// CUP may not: see the remarks on <see cref="Currency"/>. Asked here so
-    /// that a module cannot open a user account in it by accident.
-    /// </remarks>
-    public static bool IsCustomerHoldable(this Currency currency) =>
-        currency is not Currency.Cup;
-
-    /// <summary>
-    /// Parses a wire code. Case-insensitive, because a code that differs only
-    /// in case is a client formatting quirk, not a different currency.
-    /// </summary>
-    /// <remarks>
-    /// <c>USD</c> is deliberately not accepted. It was this enum's first member
-    /// and it named the same internal unit E-ISLA names now, so taking it as an
-    /// alias would look kind; it would also mean a client built against the old
-    /// contract keeps working while showing people a currency IslaPay does not
-    /// issue. A rejected code is a bug report. A silently accepted one is not.
-    /// </remarks>
-    public static bool TryParseCode(string? code, out Currency currency)
-    {
-        switch (code?.Trim().ToUpperInvariant())
-        {
-            case "EISLA": currency = Currency.EIsla; return true;
-            case "USDC": currency = Currency.Usdc; return true;
-            case "USDT": currency = Currency.Usdt; return true;
-            case "CUP": currency = Currency.Cup; return true;
-            default: currency = default; return false;
-        }
+        Code = code;
+        Scale = scale;
     }
 
-    public static Currency ParseCode(string code) =>
-        TryParseCode(code, out var currency)
-            ? currency
-            : throw new FormatException($"Unknown currency code '{code}'.");
+    /// <summary>The wire code: <c>EISLA</c>, <c>USDT</c>, <c>MXN</c>.</summary>
+    public string Code { get; }
+
+    /// <summary>
+    /// Decimal places this currency is accounted in.
+    /// </summary>
+    /// <remarks>
+    /// The whole reason <see cref="Money"/> can be an integer: a balance is
+    /// always a whole number of these units, never a fraction of one.
+    /// </remarks>
+    public int Scale { get; }
+
+    /// <summary>
+    /// False for <c>default(Currency)</c>, which is not a currency.
+    /// </summary>
+    /// <remarks>
+    /// A struct always has a zero value and this one's is meaningless — code
+    /// null, scale nought. It is checked rather than tolerated: a
+    /// <c>default(Money)</c> that quietly behaved like zero of something would
+    /// balance a posting it had no business balancing.
+    /// </remarks>
+    public bool IsDefined => Code is not null;
+
+    /// <summary>
+    /// Builds one from a code and a scale.
+    /// </summary>
+    /// <remarks>
+    /// The only way to make a <see cref="Currency"/>, and it takes data rather
+    /// than naming anything. In the application these two facts come from
+    /// <c>catalog.currencies</c>; a test may state them directly, which is the
+    /// same thing said sooner.
+    /// </remarks>
+    public static Currency Of(string code, int scale)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(code);
+
+        var normalised = code.Trim().ToUpperInvariant();
+        if (!CodeShape.IsMatch(normalised))
+        {
+            throw new ArgumentException(
+                $"'{code}' is not a currency code: two to twelve characters, "
+                + "letters and digits only.",
+                nameof(code));
+        }
+
+        ArgumentOutOfRangeException.ThrowIfNegative(scale);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(scale, MaximumScale);
+
+        return new Currency(normalised, scale);
+    }
+
+    /// <summary>The code, so interpolation and logs read naturally.</summary>
+    public override string ToString() => Code ?? "(none)";
+}
+
+/// <summary>
+/// Somewhere that knows how many decimal places a code is accounted in.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The one thing that cannot be answered from the wire. A
+/// <see cref="Money"/> already carries its scale, so writing one needs nothing;
+/// <i>reading</i> one gets a code and a decimal string and has to decide
+/// whether <c>"1.5"</c> in USDT means fifteen hundred thousand minor units or
+/// a malformed amount.
+/// </para>
+/// <para>
+/// Narrow on purpose. <c>ICurrencyCatalog</c> implements it, and nothing that
+/// only needs to parse an amount has to take the whole catalogue to do it.
+/// </para>
+/// </remarks>
+public interface ICurrencyScales
+{
+    bool TryGetScale(string? code, out int scale);
+}
+
+/// <summary>
+/// Scales stated outright, for code that has no catalogue to ask.
+/// </summary>
+/// <remarks>
+/// Its uses are bootstrapping and tests. It is not a catalogue: it knows
+/// nothing about whether a currency is enabled, holdable or on a chain, and it
+/// cannot answer a question it was not built with.
+/// </remarks>
+public sealed class StatedScales : ICurrencyScales
+{
+    private readonly Dictionary<string, int> _scales;
+
+    public StatedScales(IReadOnlyDictionary<string, int> scales)
+    {
+        ArgumentNullException.ThrowIfNull(scales);
+        _scales = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (code, scale) in scales) _scales[code.Trim()] = scale;
+    }
+
+    public StatedScales(params Currency[] currencies)
+        : this((currencies ?? []).ToDictionary(c => c.Code, c => c.Scale, StringComparer.Ordinal))
+    {
+    }
+
+    /// <summary>
+    /// Refuses every code.
+    /// </summary>
+    /// <remarks>
+    /// The default for serializer options built without a catalogue. Writing
+    /// money still works — a <see cref="Money"/> knows its own scale — and
+    /// reading one fails with a message that names the fix, rather than
+    /// guessing a scale and being wrong by a factor of ten thousand.
+    /// </remarks>
+    public static ICurrencyScales None { get; } = new StatedScales([]);
+
+    public bool TryGetScale(string? code, out int scale)
+    {
+        scale = 0;
+        return code is not null && _scales.TryGetValue(code.Trim(), out scale);
+    }
 }

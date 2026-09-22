@@ -1,3 +1,4 @@
+using IslaPay.TestSupport;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
@@ -28,7 +29,7 @@ namespace IslaPay.EndToEnd.Tests;
 public class OutboxDeliveryTests
 {
     private const string Password = "Correct-Horse-9";
-    private static readonly JsonSerializerOptions Json = IslaPayJson.Options;
+    private static readonly JsonSerializerOptions Json = IslaPayJson.Create(TestCurrencies.Scales);
 
     private readonly IslaPayHostFixture _fixture;
 
@@ -102,7 +103,7 @@ public class OutboxDeliveryTests
                 Description: null,
                 Category: "Hogar",
                 Condition: "Usado",
-                Price: Money.Parse(price, Currency.EIsla)),
+                Price: Money.Parse(price, TestCurrencies.EIsla)),
             Json);
 
         response.EnsureSuccessStatusCode();
@@ -152,13 +153,13 @@ public class OutboxDeliveryTests
 
     private static async Task FundAsync(IslaPayHost host, string userId, string amount)
     {
-        var money = Money.Parse(amount, Currency.EIsla);
+        var money = Money.Parse(amount, TestCurrencies.EIsla);
         await host.Services.GetRequiredService<ILedger>().PostAsync(new PostingRequest(
             Kind: "settlement",
             Legs:
             [
-                new PostingLeg(AccountRef.User(userId, Currency.EIsla), money),
-                new PostingLeg(AccountRef.CashFloat(Currency.EIsla), -money),
+                new PostingLeg(AccountRef.User(userId, TestCurrencies.EIsla), money),
+                new PostingLeg(AccountRef.CashFloat(TestCurrencies.EIsla), -money),
             ]));
     }
 

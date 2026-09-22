@@ -32,6 +32,17 @@ public sealed class Listing
 
     public string CurrencyCode { get; set; } = string.Empty;
 
+    /// <summary>
+    /// The currency's decimal places, stored beside its code.
+    /// </summary>
+    /// <remarks>
+    /// A row carries what a unit is. Minor units plus a code do not say
+    /// whether 1500000 is one and a half USDT or a million and a half, and the
+    /// answer used to come from a compile-time enum — the thing the currency
+    /// catalogue replaced.
+    /// </remarks>
+    public int CurrencyScale { get; set; }
+
     public long PriceMinor { get; set; }
 
     public string Location { get; set; } = string.Empty;
@@ -45,7 +56,7 @@ public sealed class Listing
     public DateTimeOffset UpdatedAt { get; set; }
 
     /// <summary>The price, reassembled from the two columns that hold it.</summary>
-    public Money Price => Money.FromMinorUnits(PriceMinor, CurrencyExtensions.ParseCode(CurrencyCode));
+    public Money Price => Money.FromMinorUnits(PriceMinor, Currency.Of(CurrencyCode, CurrencyScale));
 }
 
 /// <summary>A row of <c>marketplace.orders</c>.</summary>
@@ -84,6 +95,17 @@ public sealed class Order
 
     public string CurrencyCode { get; set; } = string.Empty;
 
+    /// <summary>
+    /// The currency's decimal places, stored beside its code.
+    /// </summary>
+    /// <remarks>
+    /// A row carries what a unit is. Minor units plus a code do not say
+    /// whether 1500000 is one and a half USDT or a million and a half, and the
+    /// answer used to come from a compile-time enum — the thing the currency
+    /// catalogue replaced.
+    /// </remarks>
+    public int CurrencyScale { get; set; }
+
     /// <summary>The price as it stood when the buyer committed. Also frozen deliberately.</summary>
     public long AmountMinor { get; set; }
 
@@ -105,9 +127,9 @@ public sealed class Order
 
     public Guid? SettlePostingId { get; set; }
 
-    public Money Amount => Money.FromMinorUnits(AmountMinor, CurrencyExtensions.ParseCode(CurrencyCode));
+    public Money Amount => Money.FromMinorUnits(AmountMinor, Currency.Of(CurrencyCode, CurrencyScale));
 
-    public Money Fee => Money.FromMinorUnits(FeeMinor, CurrencyExtensions.ParseCode(CurrencyCode));
+    public Money Fee => Money.FromMinorUnits(FeeMinor, Currency.Of(CurrencyCode, CurrencyScale));
 
     /// <summary>What reaches the seller: the price less IslaPay's commission.</summary>
     public Money SellerReceives => Amount - Fee;
@@ -163,6 +185,7 @@ public sealed class MarketplaceDbContext : DbContext
             listing.Property(l => l.Category).HasColumnName("category");
             listing.Property(l => l.Condition).HasColumnName("condition");
             listing.Property(l => l.CurrencyCode).HasColumnName("currency");
+            listing.Property(l => l.CurrencyScale).HasColumnName("currency_scale");
             listing.Property(l => l.PriceMinor).HasColumnName("price_minor");
             listing.Property(l => l.Location).HasColumnName("location");
             listing.Property(l => l.Photos).HasColumnName("photos");
@@ -185,6 +208,7 @@ public sealed class MarketplaceDbContext : DbContext
             order.Property(o => o.SellerName).HasColumnName("seller_name");
             order.Property(o => o.ListingTitle).HasColumnName("listing_title");
             order.Property(o => o.CurrencyCode).HasColumnName("currency");
+            order.Property(o => o.CurrencyScale).HasColumnName("currency_scale");
             order.Property(o => o.AmountMinor).HasColumnName("amount_minor");
             order.Property(o => o.FeeMinor).HasColumnName("fee_minor");
             order.Property(o => o.Code).HasColumnName("code");

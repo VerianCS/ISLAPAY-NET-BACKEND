@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using IslaPay.Catalog.Contracts;
 using IslaPay.Custody.Contracts;
 using IslaPay.Platform;
 using Microsoft.AspNetCore.Builder;
@@ -26,22 +27,36 @@ public static class CustodyEndpoints
             .WithTags("Custody")
             .RequireAuthorization();
 
-        // The networks this build watches, so a client does not hard-code a
-        // list it cannot keep in step with the server's.
-        group.MapGet("/networks", () => Results.Ok(
-            CustodyNetworks.All.Select(n => new
-            {
-                id = n.Id,
-                name = n.Name,
-                currency = n.Currency.Code(),
-                confirmations = n.Confirmations,
-            })));
+        // Which asset can be deposited on which chain, from the catalogue and
+        // not from a list in this file. A client that hard-codes the pairs is
+        // a client that keeps offering a chain after it has been switched off.
+        group.MapGet("/networks", (ICurrencyCatalog catalog, string? currency) =>
+        {
+            var pairs = currency is { Length: > 0 }
+                ? catalog.NetworksFor(currency)
+                : [.. catalog.Currencies
+                    .Where(c => c.IsOnChain)
+                    .SelectMany(c => catalog.NetworksFor(c.Code))];
 
-        group.MapGet("/addresses/{network}", async (
-            string network, ClaimsPrincipal caller, CustodyService custody,
-            CancellationToken ct) =>
+            return Results.Ok(pairs.Where(p => p.Enabled).Select(p => new
+            {
+                id = p.NetworkId,
+                name = p.NetworkName,
+                currency = p.CurrencyCode,
+                contract = p.Contract,
+                confirmations = p.Confirmations,
+                memoRequired = p.MemoRequired,
+            }));
+        });
+
+        // Asset first, then chain. A network alone no longer names a deposit:
+        // one chain carries several assets, and which one the money is in is
+        // the part that decides where it lands.
+        group.MapGet("/addresses/{currency}/{network}", async (
+            string currency, string network, ClaimsPrincipal caller,
+            CustodyService custody, CancellationToken ct) =>
             Results.Ok(await custody
-                .AddressAsync(SubjectOf(caller), network, ct)
+                .AddressAsync(SubjectOf(caller), currency, network, ct)
                 .ConfigureAwait(false)));
 
         group.MapGet("/deposits", async (

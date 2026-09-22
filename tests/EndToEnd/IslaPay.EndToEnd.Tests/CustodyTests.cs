@@ -1,7 +1,9 @@
+using IslaPay.TestSupport;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using IslaPay.Catalog.Contracts;
 using IslaPay.Custody;
 using IslaPay.Custody.Contracts;
 using IslaPay.Identity;
@@ -30,7 +32,18 @@ namespace IslaPay.EndToEnd.Tests;
 public class CustodyTests
 {
     private const string Password = "Correct-Horse-9";
-    private static readonly JsonSerializerOptions Json = IslaPayJson.Options;
+
+    /// <summary>The one asset-and-chain pair this build has switched on.</summary>
+    /// <remarks>
+    /// A currency <i>and</i> a network, because a chain carries several assets
+    /// now. The confirmations are not written here — they are read from the
+    /// running host's catalogue, so this asserts that what the API publishes
+    /// is what the table says rather than that two constants agree.
+    /// </remarks>
+    private const string Asset = CurrencyCodes.Usdt;
+
+    private const string Chain = "tron";
+    private static readonly JsonSerializerOptions Json = IslaPayJson.Create(TestCurrencies.Scales);
 
     private readonly IslaPayHostFixture _fixture;
 
@@ -49,7 +62,7 @@ public class CustodyTests
 
         Assert.Equal(first.Address, again.Address);
         Assert.Equal("USDT", first.Currency);
-        Assert.Equal(CustodyNetworks.TronUsdt.Confirmations, first.Confirmations);
+        Assert.Equal(Pair(host).Confirmations, first.Confirmations);
         Assert.StartsWith("T", first.Address, StringComparison.Ordinal);
     }
 
@@ -68,7 +81,7 @@ public class CustodyTests
         using var client = host.CreateClient();
         Authorize(client, user.AccessToken);
         var response = await client.GetAsync(
-            new Uri($"/v1/me/custody/addresses/{CustodyNetworks.Tron}", UriKind.Relative));
+            new Uri($"/v1/me/custody/addresses/{Asset}/{Chain}", UriKind.Relative));
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         Assert.Equal(
@@ -85,11 +98,11 @@ public class CustodyTests
         var address = (await AddressAsync(host, user)).Address;
 
         var seen = new ObservedTransfer(
-            Network: CustodyNetworks.Tron,
+            Network: Chain,
             Address: address,
             TxHash: "0x" + Guid.NewGuid().ToString("N"),
-            Amount: Money.Parse("250.000000", Currency.Usdt),
-            Confirmations: CustodyNetworks.TronUsdt.Confirmations);
+            Amount: Money.Parse("250.000000", TestCurrencies.Usdt),
+            Confirmations: Pair(host).Confirmations);
 
         // The scanner's entry point. Not an HTTP endpoint, and deliberately:
         // this module's write path belongs to whatever reads the chain.
@@ -103,13 +116,13 @@ public class CustodyTests
         // In the real ledger, in the user's real balance.
         var ledger = host.Services.GetRequiredService<ILedger>();
         var balance = await ledger.BalanceOfAsync(
-            AccountRef.User(user.UserId, Currency.Usdt));
+            AccountRef.User(user.UserId, TestCurrencies.Usdt));
         Assert.Equal("250.000000", balance.ToString());
 
         // And the mirror account carries the other side, negative — money
         // received from outside.
         var mirror = await ledger.BalanceOfAsync(
-            AccountRef.External(CustodyNetworks.Tron, Currency.Usdt));
+            AccountRef.External(Chain, TestCurrencies.Usdt));
         Assert.Equal("-250.000000", mirror.ToString());
 
         // And the client can see it.
@@ -137,10 +150,10 @@ public class CustodyTests
         {
             var custody = scope.ServiceProvider.GetRequiredService<CustodyService>();
             await custody.ObserveAsync(new ObservedTransfer(
-                Network: CustodyNetworks.Tron,
+                Network: Chain,
                 Address: address,
                 TxHash: "0x" + Guid.NewGuid().ToString("N"),
-                Amount: Money.Parse("10.000000", Currency.Usdt),
+                Amount: Money.Parse("10.000000", TestCurrencies.Usdt),
                 Confirmations: 4));
         }
 
@@ -158,7 +171,7 @@ public class CustodyTests
 
         var ledger = host.Services.GetRequiredService<ILedger>();
         var balance = await ledger.BalanceOfAsync(
-            AccountRef.User(user.UserId, Currency.Usdt));
+            AccountRef.User(user.UserId, TestCurrencies.Usdt));
         Assert.Equal("0.000000", balance.ToString());
     }
 
@@ -187,12 +200,16 @@ public class CustodyTests
 
     private sealed record Account(string UserId, string Email, string Phone, string AccessToken);
 
+    /// <summary>What the running host's catalogue says about USDT on TRON.</summary>
+    private static CurrencyOnNetwork Pair(IslaPayHost host) =>
+        host.Services.GetRequiredService<ICurrencyCatalog>().OnNetwork(Asset, Chain)!;
+
     private static async Task<DepositAddressDto> AddressAsync(IslaPayHost host, Account user)
     {
         using var client = host.CreateClient();
         Authorize(client, user.AccessToken);
         return await Read<DepositAddressDto>(await client.GetAsync(
-            new Uri($"/v1/me/custody/addresses/{CustodyNetworks.Tron}", UriKind.Relative)));
+            new Uri($"/v1/me/custody/addresses/{Asset}/{Chain}", UriKind.Relative)));
     }
 
     private static async Task<Account> RegisterAsync(IslaPayHost host)

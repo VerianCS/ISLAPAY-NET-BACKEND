@@ -36,6 +36,31 @@ public interface IIslaPayModule
     void MapEndpoints(IEndpointRouteBuilder routes);
 }
 
+/// <summary>
+/// Work a module needs done, once, before the first request.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Not <c>IHostedService</c>, and the difference matters. Hosted services
+/// start when the host starts, which is after the pipeline is built and in
+/// some test harnesses not in a defined order relative to it. A startup task
+/// runs inside <c>UseIslaPayPlatformAsync</c>, immediately after the
+/// migrations and before a single route is mapped, so a module that cannot
+/// answer questions until it has loaded something has somewhere to load it
+/// that is guaranteed to be early enough.
+/// </para>
+/// <para>
+/// A task that throws fails start-up. That is the point: a process serving
+/// traffic without the thing it needed is worse than one that did not come up.
+/// </para>
+/// </remarks>
+public interface IStartupTask
+{
+    string Name { get; }
+
+    Task RunAsync(CancellationToken cancellationToken = default);
+}
+
 /// <summary>A dependency a module needs before it can serve traffic.</summary>
 /// <remarks>
 /// Readiness is composed rather than centralised: the platform cannot know

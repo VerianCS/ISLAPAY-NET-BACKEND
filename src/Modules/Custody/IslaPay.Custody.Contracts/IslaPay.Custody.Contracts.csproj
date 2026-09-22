@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <ProjectReference Include="..\..\Catalog\IslaPay.Catalog.Contracts\IslaPay.Catalog.Contracts.csproj" />
     <ProjectReference Include="..\..\..\Platform\IslaPay.Platform.Money\IslaPay.Platform.Money.csproj" />
   </ItemGroup>
 

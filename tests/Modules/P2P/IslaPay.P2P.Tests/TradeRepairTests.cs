@@ -1,3 +1,4 @@
+using IslaPay.TestSupport;
 using IslaPay.Ledger.Contracts;
 using IslaPay.P2P.Contracts;
 using IslaPay.Platform;
@@ -29,9 +30,9 @@ public sealed class TradeRepairTests : IAsyncLifetime
 
     public Task DisposeAsync() => Task.CompletedTask;
 
-    private static Money EIsla(string amount) => Money.Parse(amount, Currency.EIsla);
+    private static Money EIsla(string amount) => Money.Parse(amount, TestCurrencies.EIsla);
 
-    private static Money Cup(string amount) => Money.Parse(amount, Currency.Cup);
+    private static Money Cup(string amount) => Money.Parse(amount, TestCurrencies.Cup);
 
     private sealed record World(
         P2PService Service, FakeLedger Ledger, string User, FakeClock Clock, P2POptions Options);
@@ -45,8 +46,8 @@ public sealed class TradeRepairTests : IAsyncLifetime
         directory.Add(user, "Ana");
 
         var ledger = new FakeLedger();
-        ledger.Fund(AccountRef.SettlementFund(Currency.Cup), Cup("1000000.00"));
-        ledger.Fund(AccountRef.SettlementFund(Currency.EIsla), EIsla("10000.00"));
+        ledger.Fund(AccountRef.SettlementFund(TestCurrencies.Cup), Cup("1000000.00"));
+        ledger.Fund(AccountRef.SettlementFund(TestCurrencies.EIsla), EIsla("10000.00"));
 
         var clock = new FakeClock(DateTimeOffset.Parse("2026-02-01T10:00:00Z", null));
         var options = new P2POptions();
@@ -72,7 +73,7 @@ public sealed class TradeRepairTests : IAsyncLifetime
         w.Ledger.FailAfterPosting = true;
         await Assert.ThrowsAsync<InvalidOperationException>(() => SellAsync(w));
 
-        Assert.Equal(1188000, w.Ledger.Balance(AccountRef.Escrow(Currency.Cup)));
+        Assert.Equal(1188000, w.Ledger.Balance(AccountRef.Escrow(TestCurrencies.Cup)));
 
         w.Clock.Advance(w.Options.InFlightGrace + TimeSpan.FromMinutes(1));
         Assert.Equal(1, await w.Service.RepairAsync());
@@ -97,12 +98,12 @@ public sealed class TradeRepairTests : IAsyncLifetime
                 $"""
                  INSERT INTO p2p.trades
                    (id, user_id, user_name, side, method_id, method_name,
-                    wallet_currency, amount_minor, fee_minor,
-                    local_currency, local_minor, rate, reference, status,
+                    wallet_currency, wallet_scale, amount_minor, fee_minor,
+                    local_currency, local_scale, local_minor, rate, reference, status,
                     created_at, expires_at)
                  VALUES
                    ({Guid.NewGuid()}, {w.User}, 'Ana', 'sell', {Rail}, 'CUP Transfermóvil',
-                    'EISLA', 10000, 100, 'CUP', 1188000, 120, 'ZZZZ-ZZZZ', 'pending',
+                    'EISLA', 2, 10000, 100, 'CUP', 2, 1188000, 120, 'ZZZZ-ZZZZ', 'pending',
                     {w.Clock.GetUtcNow()}, {w.Clock.GetUtcNow().AddHours(4)})
                  """);
         }
@@ -125,7 +126,7 @@ public sealed class TradeRepairTests : IAsyncLifetime
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => w.Service.ConfirmPayoutAsync("op", Guid.Parse(trade.Id), "TM-1"));
 
-        Assert.Equal(1188000, w.Ledger.Balance(AccountRef.External(Rail, Currency.Cup)));
+        Assert.Equal(1188000, w.Ledger.Balance(AccountRef.External(Rail, TestCurrencies.Cup)));
 
         w.Clock.Advance(w.Options.InFlightGrace + TimeSpan.FromMinutes(1));
         Assert.Equal(1, await w.Service.RepairAsync());
@@ -135,7 +136,7 @@ public sealed class TradeRepairTests : IAsyncLifetime
         // Finished as what it was. Resolving it as a refund would have given
         // the user their E-ISLA back on top of the CUP they had just received.
         Assert.Equal(P2PTradeStatuses.Completed, settled.Status);
-        Assert.Equal(-10000, w.Ledger.Balance(AccountRef.User(w.User, Currency.EIsla)));
+        Assert.Equal(-10000, w.Ledger.Balance(AccountRef.User(w.User, TestCurrencies.EIsla)));
     }
 
     [SkippableFact]
@@ -155,8 +156,8 @@ public sealed class TradeRepairTests : IAsyncLifetime
 
         Assert.Equal(P2PTradeStatuses.Refunded, settled.Status);
         Assert.Equal("sin saldo en la cuenta", settled.FailureReason);
-        Assert.Equal(0, w.Ledger.Balance(AccountRef.User(w.User, Currency.EIsla)));
-        Assert.Equal(0, w.Ledger.Balance(AccountRef.External(Rail, Currency.Cup)));
+        Assert.Equal(0, w.Ledger.Balance(AccountRef.User(w.User, TestCurrencies.EIsla)));
+        Assert.Equal(0, w.Ledger.Balance(AccountRef.External(Rail, TestCurrencies.Cup)));
     }
 
     [SkippableFact]
@@ -180,8 +181,8 @@ public sealed class TradeRepairTests : IAsyncLifetime
 
         // Not paid out on the strength of a request that did not finish: back
         // in the queue for a person to decide again.
-        Assert.Equal(0, w.Ledger.Balance(AccountRef.External(Rail, Currency.Cup)));
-        Assert.Equal(1188000, w.Ledger.Balance(AccountRef.Escrow(Currency.Cup)));
+        Assert.Equal(0, w.Ledger.Balance(AccountRef.External(Rail, TestCurrencies.Cup)));
+        Assert.Equal(1188000, w.Ledger.Balance(AccountRef.Escrow(TestCurrencies.Cup)));
 
         var back = await w.Service.TradeAsync(w.User, Guid.Parse(trade.Id));
         Assert.Equal(P2PTradeStatuses.AwaitingPayout, back.Status);
@@ -213,7 +214,7 @@ public sealed class TradeRepairTests : IAsyncLifetime
         // refuses the other one outright.
         var back = await w.Service.TradeAsync(w.User, Guid.Parse(trade.Id));
         Assert.Equal(P2PTradeStatuses.AwaitingPayment, back.Status);
-        Assert.Equal(0, w.Ledger.Balance(AccountRef.User(w.User, Currency.EIsla)));
+        Assert.Equal(0, w.Ledger.Balance(AccountRef.User(w.User, TestCurrencies.EIsla)));
     }
 
     [SkippableFact]
@@ -232,10 +233,10 @@ public sealed class TradeRepairTests : IAsyncLifetime
         await w.Service.RepairAsync();
         await w.Service.RepairAsync();
 
-        Assert.Equal(0, w.Ledger.Balance(AccountRef.Escrow(Currency.Cup)));
-        Assert.Equal(0, w.Ledger.Balance(AccountRef.External(Rail, Currency.Cup)));
-        Assert.Equal(100000000, w.Ledger.Balance(AccountRef.SettlementFund(Currency.Cup)));
-        Assert.Equal(0, w.Ledger.Balance(AccountRef.User(w.User, Currency.EIsla)));
+        Assert.Equal(0, w.Ledger.Balance(AccountRef.Escrow(TestCurrencies.Cup)));
+        Assert.Equal(0, w.Ledger.Balance(AccountRef.External(Rail, TestCurrencies.Cup)));
+        Assert.Equal(100000000, w.Ledger.Balance(AccountRef.SettlementFund(TestCurrencies.Cup)));
+        Assert.Equal(0, w.Ledger.Balance(AccountRef.User(w.User, TestCurrencies.EIsla)));
 
         Assert.Single(
             w.Ledger.Posted, p => p.IdempotencyKey == P2PService.SettleKey(Guid.Parse(trade.Id)));
@@ -254,7 +255,7 @@ public sealed class TradeRepairTests : IAsyncLifetime
 
         var still = await w.Service.TradeAsync(w.User, Guid.Parse(trade.Id));
         Assert.Equal(P2PTradeStatuses.AwaitingPayout, still.Status);
-        Assert.Equal(1188000, w.Ledger.Balance(AccountRef.Escrow(Currency.Cup)));
+        Assert.Equal(1188000, w.Ledger.Balance(AccountRef.Escrow(TestCurrencies.Cup)));
     }
 
     [SkippableFact]

@@ -140,7 +140,10 @@ public sealed class MarketplaceService
             Description = description,
             Category = category,
             Condition = condition,
-            CurrencyCode = request.Price.Currency.Code(),
+            CurrencyCode = request.Price.Currency.Code,
+            // The scale travels with the code, so the row means what it meant
+            // when it was written even if the catalogue is later re-read.
+            CurrencyScale = request.Price.Currency.Scale,
             PriceMinor = request.Price.MinorUnits,
             Location = (request.Location ?? string.Empty).Trim(),
             Photos = [.. photos],
@@ -315,7 +318,7 @@ public sealed class MarketplaceService
             var failure = new MarketplaceException(
                 MarketplaceErrors.InsufficientFunds, 422,
                 $"The account holds {e.Available} and {e.Requested} was requested.");
-            failure.Facts["currency"] = order.Amount.Currency.Code();
+            failure.Facts["currency"] = order.Amount.Currency.Code;
             failure.Facts["available"] = e.Available.ToString();
             failure.Facts["requested"] = e.Requested.ToString();
             throw failure;
@@ -622,6 +625,7 @@ public sealed class MarketplaceService
             SellerName = listing.SellerName,
             ListingTitle = listing.Title,
             CurrencyCode = listing.CurrencyCode,
+            CurrencyScale = listing.CurrencyScale,
             AmountMinor = price.MinorUnits,
             FeeMinor = price.MultiplyByBasisPoints(_options.FeeBps, MidpointRounding.ToEven).MinorUnits,
             Code = RedemptionCode.New(),

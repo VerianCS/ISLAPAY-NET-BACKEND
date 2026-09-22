@@ -15,9 +15,23 @@ namespace IslaPay.Platform.Serialization;
 /// </remarks>
 public static class IslaPayJson
 {
+    /// <summary>
+    /// Options that can write anything and cannot read money.
+    /// </summary>
+    /// <remarks>
+    /// Everything the outbox, the bus and the problem writer do is writing,
+    /// and a <see cref="Money"/> carries its own scale, so writing needs no
+    /// catalogue. Reading one does, and these say so instead of guessing —
+    /// see <see cref="Create"/>.
+    /// </remarks>
     public static JsonSerializerOptions Options { get; } = Create();
 
-    public static JsonSerializerOptions Create()
+    /// <param name="scales">
+    /// Where a currency code's decimal places come from when reading. In the
+    /// application this is the catalogue; omitted, money can be written but
+    /// not read back.
+    /// </param>
+    public static JsonSerializerOptions Create(ICurrencyScales? scales = null)
     {
         var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
         {
@@ -28,7 +42,7 @@ public static class IslaPayJson
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
         };
 
-        options.Converters.Add(new MoneyJsonConverter());
+        options.Converters.Add(new MoneyJsonConverter(scales));
         options.Converters.Add(new Utc8601Converter());
         // Enums travel as lowercase names, not ordinals. An ordinal is
         // unreadable in a log and silently changes meaning if anyone ever

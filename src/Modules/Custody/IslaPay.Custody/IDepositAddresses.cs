@@ -1,3 +1,4 @@
+using IslaPay.Catalog.Contracts;
 using IslaPay.Custody.Contracts;
 
 namespace IslaPay.Custody;
@@ -32,7 +33,7 @@ public interface IDepositAddresses
     /// Issues an address for one user on one network.
     /// </summary>
     /// <remarks>
-    /// Called once per user and network — the result is stored and reused. An
+    /// Called once per user, asset and chain — the result is stored and reused. An
     /// implementation may return the same address for the same arguments, and
     /// several will, but nothing here depends on that.
     /// </remarks>
@@ -41,7 +42,7 @@ public interface IDepositAddresses
     /// cannot be reached or will not issue one.
     /// </exception>
     Task<IssuedAddress> IssueAsync(
-        string userId, CustodyNetwork network, CancellationToken cancellationToken = default);
+        string userId, CurrencyOnNetwork network, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -64,7 +65,7 @@ public interface IDepositAddresses
 public sealed class DevelopmentDepositAddresses : IDepositAddresses
 {
     public Task<IssuedAddress> IssueAsync(
-        string userId, CustodyNetwork network, CancellationToken cancellationToken = default)
+        string userId, CurrencyOnNetwork network, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(network);
 
@@ -73,7 +74,7 @@ public sealed class DevelopmentDepositAddresses : IDepositAddresses
         // and which says something useful about how little this is a real
         // address-derivation scheme.
         var seed = System.Security.Cryptography.SHA512.HashData(
-            System.Text.Encoding.UTF8.GetBytes($"{network.Id}:{userId}"));
+            System.Text.Encoding.UTF8.GetBytes($"{network.NetworkId}:{userId}"));
 
         // Base58, and none of its lookalike characters, so what comes out
         // satisfies the network's own pattern.

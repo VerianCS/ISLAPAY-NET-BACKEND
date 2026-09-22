@@ -1,8 +1,10 @@
+using IslaPay.TestSupport;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using IslaPay.Catalog.Contracts;
 using IslaPay.Identity;
 using IslaPay.Identity.Contracts;
 using IslaPay.Ledger.Contracts;
@@ -28,7 +30,7 @@ namespace IslaPay.EndToEnd.Tests;
 public class TransferTests
 {
     private const string Password = "Correct-Horse-9";
-    private static readonly JsonSerializerOptions Json = IslaPayJson.Options;
+    private static readonly JsonSerializerOptions Json = IslaPayJson.Create(TestCurrencies.Scales);
 
     private readonly IslaPayHostFixture _fixture;
 
@@ -287,7 +289,7 @@ public class TransferTests
 
         var response = await client.PostAsJsonAsync(
             "/v1/transfers",
-            new TransferRequest(Money.Parse("1.00", Currency.EIsla), recipient.Email),
+            new TransferRequest(Money.Parse("1.00", TestCurrencies.EIsla), recipient.Email),
             Json);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -302,8 +304,16 @@ public class TransferTests
     /// <remarks>
     /// Taking the old code as an alias would keep that client working while it
     /// told somebody they hold US dollars, which IslaPay does not issue. So it
-    /// is refused at the edge, before anything reads an amount, and this test
-    /// is what makes that a decision rather than an oversight.
+    /// is refused, and this test is what makes that a decision rather than an
+    /// oversight.
+    /// <para>
+    /// Where it is refused moved when currencies became rows. It used to fail
+    /// while reading the body, because no <c>USD</c> existed to read it as;
+    /// now the dollar is a listed currency — switched off — so the body parses
+    /// and the ledger declines the posting. The refusal is the same and its
+    /// reason is better: the answer is "not this currency", not "not this
+    /// JSON".
+    /// </para>
     /// </remarks>
     [SkippableFact]
     public async Task A_transfer_still_denominated_in_the_old_code_is_refused()
@@ -333,15 +343,22 @@ public class TransferTests
 
         var response = await client.SendAsync(request);
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        // Refused as a currency this build will not accept, not as a broken
+        // body. USD is a real currency and the catalogue lists it — switched
+        // off, because IslaPay does not issue US dollars and its own unit is
+        // E-ISLA. So the server understood the request perfectly and declined
+        // it, which is 422 rather than 400.
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
 
         // A structured problem, not a stack trace: the client parses this
         // shape and nothing else, and a body it cannot read is an error it
         // cannot show.
         Assert.Equal(
             "application/problem+json", response.Content.Headers.ContentType?.MediaType);
-        Assert.Equal(
-            PlatformErrors.MalformedRequest, (await Read<ApiProblem>(response)).Code);
+
+        var problem = await Read<ApiProblem>(response);
+        Assert.Equal(CatalogErrors.CurrencyUnavailable, problem.Code);
+        Assert.Equal("USD", problem.Meta?["currency"].ToString());
 
         var ledger = host.Services.GetRequiredService<ILedger>();
         Assert.Equal("10.00", (await EIslaBalanceAsync(ledger, sender.UserId)).ToString());
@@ -474,13 +491,13 @@ public class TransferTests
     /// </remarks>
     private static async Task FundAsync(IslaPayHost host, string userId, string amount)
     {
-        var money = Money.Parse(amount, Currency.EIsla);
+        var money = Money.Parse(amount, TestCurrencies.EIsla);
         await host.Services.GetRequiredService<ILedger>().PostAsync(new PostingRequest(
             Kind: "settlement",
             Legs:
             [
-                new PostingLeg(AccountRef.User(userId, Currency.EIsla), money),
-                new PostingLeg(AccountRef.CashFloat(Currency.EIsla), -money),
+                new PostingLeg(AccountRef.User(userId, TestCurrencies.EIsla), money),
+                new PostingLeg(AccountRef.CashFloat(TestCurrencies.EIsla), -money),
             ],
             Metadata: new Dictionary<string, string>(StringComparer.Ordinal)
             {
@@ -498,7 +515,7 @@ public class TransferTests
         {
             Content = new StringContent(
                 JsonSerializer.Serialize(
-                    new TransferRequest(Money.Parse(amount, Currency.EIsla), destination), Json),
+                    new TransferRequest(Money.Parse(amount, TestCurrencies.EIsla), destination), Json),
                 Encoding.UTF8,
                 "application/json"),
         };
@@ -513,7 +530,7 @@ public class TransferTests
             new AuthenticationHeaderValue("Bearer", accessToken);
 
     private static async Task<Money> EIslaBalanceAsync(ILedger ledger, string userId) =>
-        (await ledger.BalancesAsync(userId)).Single(b => b.Currency == Currency.EIsla).Balance;
+        (await ledger.BalancesAsync(userId)).Single(b => b.Currency == TestCurrencies.EIsla).Balance;
 
     private static async Task<T> Read<T>(HttpResponseMessage response)
     {

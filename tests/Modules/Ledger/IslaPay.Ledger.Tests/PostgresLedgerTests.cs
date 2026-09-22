@@ -36,10 +36,10 @@ public class PostgresLedgerTests
         var ledger = Ledger();
         var user = NewUser();
 
-        await ledger.EnsureUserAccountsAsync(user, [Currency.EIsla, Currency.Usdt]);
+        await ledger.EnsureUserAccountsAsync(user, [TestCurrencies.EIsla, TestCurrencies.Usdt]);
         // Called again from the lazy path on first read, and from a redelivered
         // event. Neither must double anything.
-        await ledger.EnsureUserAccountsAsync(user, [Currency.EIsla, Currency.Usdt]);
+        await ledger.EnsureUserAccountsAsync(user, [TestCurrencies.EIsla, TestCurrencies.Usdt]);
 
         var balances = await ledger.BalancesAsync(user);
 
@@ -53,12 +53,12 @@ public class PostgresLedgerTests
         var ledger = Ledger();
         var user = NewUser();
 
-        await ledger.EnsureUserAccountsAsync(user, [Currency.EIsla]);
+        await ledger.EnsureUserAccountsAsync(user, [TestCurrencies.EIsla]);
         var balances = await ledger.BalancesAsync(user);
 
         // A wallet that hides a zero balance looks broken to someone who has
         // just signed up.
-        Assert.Equal(Currency.EIsla, Assert.Single(balances).Currency);
+        Assert.Equal(TestCurrencies.EIsla, Assert.Single(balances).Currency);
     }
 
     [SkippableFact]
@@ -66,14 +66,14 @@ public class PostgresLedgerTests
     {
         var ledger = Ledger();
         var user = NewUser();
-        await ledger.EnsureUserAccountsAsync(user, [Currency.EIsla]);
+        await ledger.EnsureUserAccountsAsync(user, [TestCurrencies.EIsla]);
 
         await ledger.PostAsync(Deposit(user, "100.00"));
 
         var balance = Assert.Single(await ledger.BalancesAsync(user));
         Assert.Equal("100.00", balance.Balance.ToString());
 
-        Assert.Equal(0, await SumOfEveryEntryAsync(Currency.EIsla));
+        Assert.Equal(0, await SumOfEveryEntryAsync(TestCurrencies.EIsla));
     }
 
     [SkippableFact]
@@ -81,7 +81,7 @@ public class PostgresLedgerTests
     {
         var ledger = Ledger();
         var user = NewUser();
-        await ledger.EnsureUserAccountsAsync(user, [Currency.EIsla]);
+        await ledger.EnsureUserAccountsAsync(user, [TestCurrencies.EIsla]);
 
         for (var i = 0; i < 20; i++)
             await ledger.PostAsync(Deposit(user, "10.00"));
@@ -97,7 +97,7 @@ public class PostgresLedgerTests
     {
         var ledger = Ledger();
         var user = NewUser();
-        await ledger.EnsureUserAccountsAsync(user, [Currency.EIsla]);
+        await ledger.EnsureUserAccountsAsync(user, [TestCurrencies.EIsla]);
 
         var key = Guid.NewGuid().ToString("N");
 
@@ -117,7 +117,7 @@ public class PostgresLedgerTests
     {
         var ledger = Ledger();
         var user = NewUser();
-        await ledger.EnsureUserAccountsAsync(user, [Currency.EIsla]);
+        await ledger.EnsureUserAccountsAsync(user, [TestCurrencies.EIsla]);
         await ledger.PostAsync(Deposit(user, "10.00"));
 
         await Assert.ThrowsAsync<InsufficientFundsException>(
@@ -135,7 +135,7 @@ public class PostgresLedgerTests
     {
         var ledger = Ledger();
         var user = NewUser();
-        await ledger.EnsureUserAccountsAsync(user, [Currency.EIsla]);
+        await ledger.EnsureUserAccountsAsync(user, [TestCurrencies.EIsla]);
 
         // Warm the connection pool first, and this is not a tidiness detail.
         //
@@ -163,7 +163,7 @@ public class PostgresLedgerTests
     {
         var ledger = Ledger();
         var user = NewUser();
-        await ledger.EnsureUserAccountsAsync(user, [Currency.EIsla]);
+        await ledger.EnsureUserAccountsAsync(user, [TestCurrencies.EIsla]);
 
         await WarmThePoolAsync();
         await Task.WhenAll(Enumerable.Range(0, 15)
@@ -193,7 +193,7 @@ public class PostgresLedgerTests
     {
         var ledger = Ledger();
         var user = NewUser();
-        await ledger.EnsureUserAccountsAsync(user, [Currency.EIsla]);
+        await ledger.EnsureUserAccountsAsync(user, [TestCurrencies.EIsla]);
         await ledger.PostAsync(Deposit(user, "5.00"));
 
         await using var connection = await _postgres.Database.OpenAsync();
@@ -215,7 +215,7 @@ public class PostgresLedgerTests
     {
         var ledger = Ledger();
         var user = NewUser();
-        await ledger.EnsureUserAccountsAsync(user, [Currency.EIsla]);
+        await ledger.EnsureUserAccountsAsync(user, [TestCurrencies.EIsla]);
 
         for (var i = 1; i <= 7; i++)
             await ledger.PostAsync(Deposit(user, $"{i}.00"));
@@ -241,7 +241,7 @@ public class PostgresLedgerTests
     {
         var ledger = Ledger();
         var user = NewUser();
-        await ledger.EnsureUserAccountsAsync(user, [Currency.EIsla]);
+        await ledger.EnsureUserAccountsAsync(user, [TestCurrencies.EIsla]);
         await ledger.PostAsync(Deposit(user, "1.00"));
 
         // Almost always a stale link, and a 500 is a worse answer than the
@@ -256,7 +256,7 @@ public class PostgresLedgerTests
     {
         var ledger = Ledger();
         var user = NewUser();
-        await ledger.EnsureUserAccountsAsync(user, [Currency.EIsla]);
+        await ledger.EnsureUserAccountsAsync(user, [TestCurrencies.EIsla]);
         await ledger.PostAsync(Deposit(user, "12.00"));
 
         var entry = Assert.Single((await ledger.EntriesAsync(user, 10)).Items);
@@ -273,8 +273,8 @@ public class PostgresLedgerTests
             Guid.NewGuid(),
             TransactionKind.Settlement,
             [
-                new Leg(AccountId.User(user, Currency.EIsla), Money.Parse(amount, Currency.EIsla)),
-                new Leg(AccountId.CashFloat(Currency.EIsla), Money.Parse($"-{amount}", Currency.EIsla)),
+                new Leg(AccountId.User(user, TestCurrencies.EIsla), Money.Parse(amount, TestCurrencies.EIsla)),
+                new Leg(AccountId.CashFloat(TestCurrencies.EIsla), Money.Parse($"-{amount}", TestCurrencies.EIsla)),
             ],
             DateTimeOffset.UtcNow,
             idempotencyKey: key,
@@ -285,8 +285,8 @@ public class PostgresLedgerTests
             Guid.NewGuid(),
             TransactionKind.Settlement,
             [
-                new Leg(AccountId.User(user, Currency.EIsla), Money.Parse($"-{amount}", Currency.EIsla)),
-                new Leg(AccountId.CashFloat(Currency.EIsla), Money.Parse(amount, Currency.EIsla)),
+                new Leg(AccountId.User(user, TestCurrencies.EIsla), Money.Parse($"-{amount}", TestCurrencies.EIsla)),
+                new Leg(AccountId.CashFloat(TestCurrencies.EIsla), Money.Parse(amount, TestCurrencies.EIsla)),
             ],
             DateTimeOffset.UtcNow);
 
@@ -317,7 +317,7 @@ public class PostgresLedgerTests
         await using var command = new NpgsqlCommand(
             "SELECT COALESCE(sum(minor_units), 0)::bigint FROM ledger.entries WHERE currency = @c;",
             connection);
-        command.Parameters.AddWithValue("c", currency.Code());
+        command.Parameters.AddWithValue("c", currency.Code);
         return (long)(await command.ExecuteScalarAsync())!;
     }
 

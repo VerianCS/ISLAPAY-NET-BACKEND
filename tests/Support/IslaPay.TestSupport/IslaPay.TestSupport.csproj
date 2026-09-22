@@ -29,7 +29,15 @@
       coupling the architecture tests exist to prevent — and they would not
       catch it here, because a support project is not a module's tests.
     -->
+    <!--
+      One module, and only its .Contracts: everything that touches money now
+      has to be told what a currency is, so a fixture that cannot say has
+      nothing to hand a service. It is the public face of Catalog, which is
+      what every module is allowed to depend on.
+    -->
+    <ProjectReference Include="..\..\..\src\Modules\Catalog\IslaPay.Catalog.Contracts\IslaPay.Catalog.Contracts.csproj" />
     <ProjectReference Include="..\..\..\src\Platform\IslaPay.Platform.Data\IslaPay.Platform.Data.csproj" />
+    <ProjectReference Include="..\..\..\src\Platform\IslaPay.Platform.Money\IslaPay.Platform.Money.csproj" />
     <ProjectReference Include="..\..\..\src\Platform\IslaPay.Platform.Messaging\IslaPay.Platform.Messaging.csproj" />
   </ItemGroup>
 

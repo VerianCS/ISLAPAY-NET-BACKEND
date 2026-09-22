@@ -13,6 +13,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\..\..\src\Modules\Wallet\IslaPay.Wallet.Contracts\IslaPay.Wallet.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\Support\IslaPay.TestSupport\IslaPay.TestSupport.csproj" />
     <ProjectReference Include="..\..\..\..\src\Platform\IslaPay.Platform.Serialization\IslaPay.Platform.Serialization.csproj" />
   </ItemGroup>
 

@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using IslaPay.Catalog.Contracts;
 using IslaPay.Identity.Contracts;
 using IslaPay.Ledger.Contracts;
 using IslaPay.P2P.Contracts;
@@ -41,6 +42,7 @@ public sealed class P2PService
 {
     private readonly P2PDbContext _db;
     private readonly ILedger _ledger;
+    private readonly ICurrencyCatalog _catalog;
     private readonly IUserDirectory _directory;
     private readonly P2POptions _options;
     private readonly TimeProvider _clock;
@@ -48,16 +50,19 @@ public sealed class P2PService
     public P2PService(
         P2PDbContext db,
         ILedger ledger,
+        ICurrencyCatalog catalog,
         IUserDirectory directory,
         P2POptions options,
         TimeProvider? clock = null)
     {
         ArgumentNullException.ThrowIfNull(db);
         ArgumentNullException.ThrowIfNull(ledger);
+        ArgumentNullException.ThrowIfNull(catalog);
         ArgumentNullException.ThrowIfNull(directory);
         ArgumentNullException.ThrowIfNull(options);
         _db = db;
         _ledger = ledger;
+        _catalog = catalog;
         _directory = directory;
         _options = options;
         _clock = clock ?? TimeProvider.System;
@@ -261,7 +266,7 @@ public sealed class P2PService
             var failure = new P2PException(
                 P2PErrors.FundUnavailable, 422,
                 "IslaPay cannot cover that trade right now.");
-            failure.Facts["currency"] = short_.Currency.Code();
+            failure.Facts["currency"] = short_.Currency.Code;
             failure.Facts["shortfall"] = short_.ToString();
             throw failure;
         }
@@ -457,11 +462,25 @@ public sealed class P2PService
                 P2PErrors.RateUnavailable, 422, "A rate must be a positive decimal.");
         }
 
+        // The operator names a currency and the catalogue says what it is.
+        // Taking the scale from the request would let a typo quote a rate
+        // against a unit a thousand times larger than the one it settles in.
+        Currency wallet;
+        try
+        {
+            wallet = _catalog.Require(update.WalletCurrency);
+        }
+        catch (UnknownCurrencyException e)
+        {
+            throw new P2PException(P2PErrors.RateUnavailable, 422, e.Message);
+        }
+
         _db.Rates.Add(new TradeRate
         {
             MethodId = method.Id,
             Side = Wire(update.Side),
-            WalletCurrencyCode = update.WalletCurrency.Trim().ToUpperInvariant(),
+            WalletCurrencyCode = wallet.Code,
+            WalletScale = wallet.Scale,
             Rate = rate,
             EffectiveFrom = _clock.GetUtcNow(),
             SetBy = operatorId,
@@ -617,10 +636,12 @@ public sealed class P2PService
             Side = Wire(side),
             MethodId = method.Id,
             MethodName = method.Name,
-            WalletCurrencyCode = priced.Amount.Currency.Code(),
+            WalletCurrencyCode = priced.Amount.Currency.Code,
+            WalletScale = priced.Amount.Currency.Scale,
             AmountMinor = priced.Amount.MinorUnits,
             FeeMinor = priced.Fee.MinorUnits,
-            LocalCurrencyCode = priced.Local.Currency.Code(),
+            LocalCurrencyCode = priced.Local.Currency.Code,
+            LocalScale = priced.Local.Currency.Scale,
             LocalMinor = priced.Local.MinorUnits,
             Rate = rate,
             Reference = TradeReference.New(),
@@ -714,7 +735,7 @@ public sealed class P2PService
             var failure = new P2PException(
                 P2PErrors.InsufficientFunds, 422,
                 $"The account holds {e.Available} and {e.Requested} was requested.");
-            failure.Facts["currency"] = wallet.Code();
+            failure.Facts["currency"] = wallet.Code;
             failure.Facts["available"] = e.Available.ToString();
             failure.Facts["requested"] = e.Requested.ToString();
             throw failure;

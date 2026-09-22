@@ -1,3 +1,4 @@
+using IslaPay.TestSupport;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -32,7 +33,7 @@ public class P2PTests
 {
     private const string Password = "Correct-Horse-9";
     private const string Rail = "cup_transfermovil";
-    private static readonly JsonSerializerOptions Json = IslaPayJson.Options;
+    private static readonly JsonSerializerOptions Json = IslaPayJson.Create(TestCurrencies.Scales);
 
     private readonly IslaPayHostFixture _fixture;
 
@@ -48,9 +49,9 @@ public class P2PTests
         await OpenTheMarketAsync(host, operador);
 
         var user = await FundedUserAsync(host, "200.00");
-        await FundTheDeskAsync(host, Currency.Cup, "5000000.00");
+        await FundTheDeskAsync(host, TestCurrencies.Cup, "5000000.00");
 
-        var escrowBefore = await PlatformBalanceAsync(host, AccountRef.Escrow(Currency.Cup));
+        var escrowBefore = await PlatformBalanceAsync(host, AccountRef.Escrow(TestCurrencies.Cup));
 
         var trade = await Read<P2PTradeDto>(
             await TradeAsync(host, user, P2PSide.Sell, "100.00"));
@@ -62,8 +63,8 @@ public class P2PTests
         Assert.Equal("100.00", (await EIslaBalanceAsync(ledger, user.UserId)).ToString());
 
         // The obligation is a real liability in the ledger, not a flag on a
-        // row: this is what Currency.Cup exists for.
-        var escrowAfter = await PlatformBalanceAsync(host, AccountRef.Escrow(Currency.Cup));
+        // row: this is what TestCurrencies.Cup exists for.
+        var escrowAfter = await PlatformBalanceAsync(host, AccountRef.Escrow(TestCurrencies.Cup));
         Assert.Equal(1188000, escrowAfter.MinorUnits - escrowBefore.MinorUnits);
     }
 
@@ -77,9 +78,9 @@ public class P2PTests
         await OpenTheMarketAsync(host, operador);
 
         var user = await FundedUserAsync(host, "200.00");
-        await FundTheDeskAsync(host, Currency.Cup, "5000000.00");
+        await FundTheDeskAsync(host, TestCurrencies.Cup, "5000000.00");
 
-        var before = await PlatformBalanceAsync(host, AccountRef.Escrow(Currency.Cup));
+        var before = await PlatformBalanceAsync(host, AccountRef.Escrow(TestCurrencies.Cup));
         var trade = await Read<P2PTradeDto>(await TradeAsync(host, user, P2PSide.Sell, "50.00"));
 
         var paid = await Read<P2PTradeDto>(await PostAsync(
@@ -87,13 +88,13 @@ public class P2PTests
             new P2PSettleRequest("TM-55512")));
 
         Assert.Equal(P2PTradeStatuses.Completed, paid.Status);
-        Assert.Equal(before, await PlatformBalanceAsync(host, AccountRef.Escrow(Currency.Cup)));
+        Assert.Equal(before, await PlatformBalanceAsync(host, AccountRef.Escrow(TestCurrencies.Cup)));
 
         // And the rail's mirror carries what was sent, which is the figure an
         // operator reconciles a bank statement against.
         Assert.Equal(
             "5940.00",
-            (await PlatformBalanceAsync(host, AccountRef.External(Rail, Currency.Cup))).ToString());
+            (await PlatformBalanceAsync(host, AccountRef.External(Rail, TestCurrencies.Cup))).ToString());
     }
 
     [SkippableFact]
@@ -106,7 +107,7 @@ public class P2PTests
         await OpenTheMarketAsync(host, operador);
 
         var user = await FundedUserAsync(host, "80.00");
-        await FundTheDeskAsync(host, Currency.Cup, "5000000.00");
+        await FundTheDeskAsync(host, TestCurrencies.Cup, "5000000.00");
 
         var trade = await Read<P2PTradeDto>(await TradeAsync(host, user, P2PSide.Sell, "80.00"));
 
@@ -131,7 +132,7 @@ public class P2PTests
         await OpenTheMarketAsync(host, operador);
 
         var user = await VerifiedUserAsync(host);
-        await FundTheDeskAsync(host, Currency.EIsla, "10000.00");
+        await FundTheDeskAsync(host, TestCurrencies.EIsla, "10000.00");
 
         var trade = await Read<P2PTradeDto>(await TradeAsync(host, user, P2PSide.Buy, "100.00"));
 
@@ -160,7 +161,7 @@ public class P2PTests
         await OpenTheMarketAsync(host, operador);
 
         var user = await FundedUserAsync(host, "60.00");
-        await FundTheDeskAsync(host, Currency.Cup, "5000000.00");
+        await FundTheDeskAsync(host, TestCurrencies.Cup, "5000000.00");
 
         var trade = await Read<P2PTradeDto>(await TradeAsync(host, user, P2PSide.Sell, "60.00"));
 
@@ -192,7 +193,7 @@ public class P2PTests
         // Emptied rather than simply not filled. Every test in this collection
         // shares one database and the settlement fund is global, so a sibling
         // that topped it up would otherwise decide whether this one passes.
-        await DrainTheDeskAsync(host, Currency.Cup);
+        await DrainTheDeskAsync(host, TestCurrencies.Cup);
 
         var response = await TradeAsync(host, user, P2PSide.Sell, "400.00");
 
@@ -217,7 +218,7 @@ public class P2PTests
         await OpenTheMarketAsync(host, operador);
 
         var user = await FundedUserAsync(host, "100.00");
-        await FundTheDeskAsync(host, Currency.Cup, "5000000.00");
+        await FundTheDeskAsync(host, TestCurrencies.Cup, "5000000.00");
 
         var key = Guid.NewGuid().ToString("N");
         var first = await Read<P2PTradeDto>(
@@ -242,7 +243,7 @@ public class P2PTests
         await OpenTheMarketAsync(host, operador);
 
         var user = await FundedUserAsync(host, "120.00");
-        await FundTheDeskAsync(host, Currency.Cup, "5000000.00");
+        await FundTheDeskAsync(host, TestCurrencies.Cup, "5000000.00");
 
         var trade = await Read<P2PTradeDto>(await TradeAsync(host, user, P2PSide.Sell, "120.00"));
 
@@ -308,7 +309,7 @@ public class P2PTests
         IslaPayHost host, Account user, P2PSide side, string amount, string? key = null) =>
         PostAsync(
             host, user, "/v1/p2p/trades",
-            new P2PTradeRequest(side, Money.Parse(amount, Currency.EIsla), Rail), key);
+            new P2PTradeRequest(side, Money.Parse(amount, TestCurrencies.EIsla), Rail), key);
 
     private static async Task<HttpResponseMessage> PostAsync(
         IslaPayHost host, Account actor, string path, object body, string? key = null)
@@ -403,14 +404,14 @@ public class P2PTests
     private static async Task<Account> FundedUserAsync(IslaPayHost host, string amount)
     {
         var account = await VerifiedUserAsync(host);
-        var money = Money.Parse(amount, Currency.EIsla);
+        var money = Money.Parse(amount, TestCurrencies.EIsla);
 
         await host.Services.GetRequiredService<ILedger>().PostAsync(new PostingRequest(
             Kind: "settlement",
             Legs:
             [
-                new PostingLeg(AccountRef.User(account.UserId, Currency.EIsla), money),
-                new PostingLeg(AccountRef.CashFloat(Currency.EIsla), -money),
+                new PostingLeg(AccountRef.User(account.UserId, TestCurrencies.EIsla), money),
+                new PostingLeg(AccountRef.CashFloat(TestCurrencies.EIsla), -money),
             ]));
 
         return account;
@@ -423,8 +424,8 @@ public class P2PTests
     private static async Task<Money> EIslaBalanceAsync(ILedger ledger, string userId)
     {
         var balances = await ledger.BalancesAsync(userId);
-        return balances.FirstOrDefault(b => b.Currency == Currency.EIsla)?.Balance
-            ?? Money.Zero(Currency.EIsla);
+        return balances.FirstOrDefault(b => b.Currency == TestCurrencies.EIsla)?.Balance
+            ?? Money.Zero(TestCurrencies.EIsla);
     }
 
     private static async Task<T> Read<T>(HttpResponseMessage response)

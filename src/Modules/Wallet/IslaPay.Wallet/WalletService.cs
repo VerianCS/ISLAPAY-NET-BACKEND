@@ -1,3 +1,4 @@
+using IslaPay.Catalog.Contracts;
 using IslaPay.Identity.Contracts;
 using IslaPay.Ledger.Contracts;
 using IslaPay.Platform;
@@ -20,30 +21,45 @@ namespace IslaPay.Wallet;
 /// </remarks>
 public sealed class WalletService
 {
+    private readonly ILedger _ledger;
+    private readonly ICurrencyCatalog _catalog;
+    private readonly IUserDirectory _directory;
+    private readonly WalletOptions _options;
+
+    public WalletService(
+        ILedger ledger,
+        ICurrencyCatalog catalog,
+        IUserDirectory directory,
+        WalletOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(ledger);
+        ArgumentNullException.ThrowIfNull(catalog);
+        ArgumentNullException.ThrowIfNull(directory);
+        ArgumentNullException.ThrowIfNull(options);
+        _ledger = ledger;
+        _catalog = catalog;
+        _directory = directory;
+        _options = options;
+    }
+
     /// <summary>
     /// The currencies every account holder gets.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// All of them, at zero, from the moment the account exists. A wallet that
     /// hides a currency until it has been used looks broken to someone who has
     /// just signed up and wants to know where to send money.
+    /// </para>
+    /// <para>
+    /// A question to the catalogue, and no longer a list of three written
+    /// here. Which currencies a customer may hold is the sort of thing that
+    /// changes for a jurisdiction on a Tuesday; as a field it changed only for
+    /// a deploy, which is the same as saying it did not change.
+    /// </para>
     /// </remarks>
-    public static readonly IReadOnlyList<Currency> OpenedOnRegistration =
-        [Currency.EIsla, Currency.Usdc, Currency.Usdt];
-
-    private readonly ILedger _ledger;
-    private readonly IUserDirectory _directory;
-    private readonly WalletOptions _options;
-
-    public WalletService(ILedger ledger, IUserDirectory directory, WalletOptions options)
-    {
-        ArgumentNullException.ThrowIfNull(ledger);
-        ArgumentNullException.ThrowIfNull(directory);
-        ArgumentNullException.ThrowIfNull(options);
-        _ledger = ledger;
-        _directory = directory;
-        _options = options;
-    }
+    public IReadOnlyList<Currency> OpenedOnRegistration =>
+        [.. _catalog.Holdable.Select(c => c.Currency)];
 
     /// <summary>
     /// Moves money from one IslaPay account to another.
@@ -171,7 +187,7 @@ public sealed class WalletService
 
             // The client’s InsufficientFunds(currency) cannot be constructed
             // without these — see API_CONTRACT.md §4.
-            failure.Facts["currency"] = currency.Code();
+            failure.Facts["currency"] = currency.Code;
             failure.Facts["available"] = e.Available.ToString();
             failure.Facts["requested"] = e.Requested.ToString();
             throw failure;
@@ -210,7 +226,7 @@ public sealed class WalletService
             .ConfigureAwait(false);
 
         return new WalletResponse(
-            Accounts: [.. balances.Select(b => new AccountDto(b.Currency.Code(), b.Balance, null))],
+            Accounts: [.. balances.Select(b => new AccountDto(b.Currency.Code, b.Balance, null))],
             Rates: Rates(),
             Transactions: new Platform.Api.CursorPage<TransactionDto>(
                 [.. history.Items.Select(Project)],
@@ -278,19 +294,20 @@ public sealed class WalletService
     /// one, which is indistinguishable from parity right up until the day
     /// parity ends. It also listed three of the six ordered pairs, so half the
     /// conversions the app offers were quoted from that same silent default.
-    /// A key derived from <see cref="CurrencyExtensions.Code"/> cannot drift
-    /// from the enum, and a loop cannot miss a direction.
+    /// A key derived from the catalogue cannot drift from it, and a loop
+    /// cannot miss a direction.
     /// </para>
     /// </remarks>
-    private static Dictionary<string, string> Rates()
+    private Dictionary<string, string> Rates()
     {
+        var holdable = OpenedOnRegistration;
         var rates = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var from in OpenedOnRegistration)
+        foreach (var from in holdable)
         {
-            foreach (var to in OpenedOnRegistration)
+            foreach (var to in holdable)
             {
                 if (from == to) continue;
-                rates[$"{from.Code()}_{to.Code()}"] = "1.0000";
+                rates[$"{from.Code}_{to.Code}"] = "1.0000";
             }
         }
 

@@ -1,3 +1,5 @@
+using IslaPay.TestSupport;
+using IslaPay.Catalog.Contracts;
 using IslaPay.Custody.Contracts;
 using IslaPay.Ledger.Contracts;
 using IslaPay.Platform;
@@ -16,7 +18,7 @@ namespace IslaPay.Custody.Tests;
 [Collection(CustodyDefinition.Name)]
 public sealed class DepositTests : IAsyncLifetime
 {
-    private static readonly CustodyNetwork Tron = CustodyNetworks.TronUsdt;
+    private static readonly CurrencyOnNetwork Tron = CustodyFixture.Tron;
 
     private readonly CustodyFixture _fixture;
 
@@ -26,7 +28,7 @@ public sealed class DepositTests : IAsyncLifetime
 
     public Task DisposeAsync() => Task.CompletedTask;
 
-    private static Money Usdt(string amount) => Money.Parse(amount, Currency.Usdt);
+    private static Money Usdt(string amount) => Money.Parse(amount, TestCurrencies.Usdt);
 
     private sealed record World(
         CustodyService Service, FakeLedger Ledger, string User, string Address, FakeClock Clock);
@@ -45,7 +47,7 @@ public sealed class DepositTests : IAsyncLifetime
         service = _fixture.Service(ledger, directory, clock: clock);
 
         var address = phoneVerified
-            ? (await service.AddressAsync(user, CustodyNetworks.Tron)).Address
+            ? (await service.AddressAsync(user, CurrencyCodes.Usdt, Tron.NetworkId)).Address
             : string.Empty;
 
         return new World(service, ledger, user, address, clock);
@@ -55,7 +57,7 @@ public sealed class DepositTests : IAsyncLifetime
         World w, string amount = "100.000000", int confirmations = 0, string? tx = null,
         int output = 0) =>
         new(
-            Network: CustodyNetworks.Tron,
+            Network: Tron.NetworkId,
             Address: w.Address,
             TxHash: tx ?? "0x" + Guid.NewGuid().ToString("N"),
             Amount: Usdt(amount),
@@ -69,7 +71,7 @@ public sealed class DepositTests : IAsyncLifetime
     {
         var w = await SetUpAsync();
 
-        var again = await w.Service.AddressAsync(w.User, CustodyNetworks.Tron);
+        var again = await w.Service.AddressAsync(w.User, CurrencyCodes.Usdt, Tron.NetworkId);
 
         Assert.Equal(w.Address, again.Address);
         Assert.Equal(Tron.Confirmations, again.Confirmations);
@@ -95,7 +97,7 @@ public sealed class DepositTests : IAsyncLifetime
             new FakeLedger(), directory, new FixedAddresses("1A1zP1eP5QGefi2DMPTfTL5SLmv7Divf"));
 
         var refused = await Assert.ThrowsAsync<CustodyException>(
-            () => service.AddressAsync(user, CustodyNetworks.Tron));
+            () => service.AddressAsync(user, CurrencyCodes.Usdt, Tron.NetworkId));
 
         Assert.Equal(CustodyErrors.AddressUnavailable, refused.Code);
 
@@ -109,21 +111,55 @@ public sealed class DepositTests : IAsyncLifetime
         var w = await SetUpAsync(phoneVerified: false);
 
         var refused = await Assert.ThrowsAsync<CustodyException>(
-            () => w.Service.AddressAsync(w.User, CustodyNetworks.Tron));
+            () => w.Service.AddressAsync(w.User, CurrencyCodes.Usdt, Tron.NetworkId));
 
         Assert.Equal(CustodyErrors.PhoneNotVerified, refused.Code);
     }
 
     [SkippableFact]
-    public async Task A_network_this_build_does_not_watch_is_a_404()
+    public async Task A_chain_nobody_has_heard_of_is_a_404()
     {
         var w = await SetUpAsync();
 
         var refused = await Assert.ThrowsAsync<CustodyException>(
-            () => w.Service.AddressAsync(w.User, "ethereum"));
+            () => w.Service.AddressAsync(w.User, CurrencyCodes.Usdt, "dogecoin"));
 
         Assert.Equal(CustodyErrors.UnknownNetwork, refused.Code);
         Assert.Equal(404, refused.Status);
+    }
+
+    /// <summary>
+    /// A chain that exists and is switched off is refused differently.
+    /// </summary>
+    /// <remarks>
+    /// The distinction only became expressible when networks became rows.
+    /// Ethereum is listed, USDT is listed on it, and this build does not watch
+    /// it — so the request was well formed and the answer is no, which is a
+    /// 422 and not a 404. Telling the client "no such chain" would be a lie
+    /// that stops being true the day the switch is flipped.
+    /// </remarks>
+    [SkippableFact]
+    public async Task A_chain_that_is_switched_off_is_a_422()
+    {
+        var w = await SetUpAsync();
+
+        var refused = await Assert.ThrowsAsync<CustodyException>(
+            () => w.Service.AddressAsync(w.User, CurrencyCodes.Usdt, "ethereum"));
+
+        Assert.Equal(CustodyErrors.CurrencyNotOnNetwork, refused.Code);
+        Assert.Equal(422, refused.Status);
+    }
+
+    /// <summary>An asset that is on no chain at all cannot be deposited.</summary>
+    [SkippableFact]
+    public async Task An_asset_that_is_not_on_the_chain_is_refused()
+    {
+        var w = await SetUpAsync();
+
+        var refused = await Assert.ThrowsAsync<CustodyException>(
+            () => w.Service.AddressAsync(w.User, CurrencyCodes.EIsla, Tron.NetworkId));
+
+        Assert.Equal(CustodyErrors.CurrencyNotOnNetwork, refused.Code);
     }
 
     // -------------------------------------------------------------- finality
@@ -163,9 +199,9 @@ public sealed class DepositTests : IAsyncLifetime
 
         // The mirror convention: negative is money received from outside.
         Assert.Equal(-100_000_000, w.Ledger.Balance(
-            AccountRef.External(CustodyNetworks.Tron, Currency.Usdt)));
+            AccountRef.External(Tron.NetworkId, TestCurrencies.Usdt)));
         Assert.Equal(100_000_000, w.Ledger.Balance(
-            AccountRef.User(w.User, Currency.Usdt)));
+            AccountRef.User(w.User, TestCurrencies.Usdt)));
     }
 
     [SkippableFact]
@@ -198,7 +234,7 @@ public sealed class DepositTests : IAsyncLifetime
         }
 
         Assert.Single(w.Ledger.Posted);
-        Assert.Equal(100_000_000, w.Ledger.Balance(AccountRef.User(w.User, Currency.Usdt)));
+        Assert.Equal(100_000_000, w.Ledger.Balance(AccountRef.User(w.User, TestCurrencies.Usdt)));
 
         await using var db = _fixture.Context();
         Assert.Equal(1, await db.Deposits.CountAsync(d => d.UserId == w.User));
@@ -216,7 +252,7 @@ public sealed class DepositTests : IAsyncLifetime
             Seen(w, "60.000000", Tron.Confirmations, tx, output: 1));
 
         Assert.Equal(2, w.Ledger.Posted.Count);
-        Assert.Equal(100_000_000, w.Ledger.Balance(AccountRef.User(w.User, Currency.Usdt)));
+        Assert.Equal(100_000_000, w.Ledger.Balance(AccountRef.User(w.User, TestCurrencies.Usdt)));
     }
 
     [SkippableFact]
@@ -242,7 +278,7 @@ public sealed class DepositTests : IAsyncLifetime
         var tx = "0x" + Guid.NewGuid().ToString("N");
 
         await w.Service.ObserveAsync(Seen(w, confirmations: 5, tx: tx));
-        Assert.True(await w.Service.OrphanAsync(CustodyNetworks.Tron, tx));
+        Assert.True(await w.Service.OrphanAsync(Tron.NetworkId, tx));
 
         var deposits = await w.Service.DepositsAsync(w.User);
         Assert.Equal(DepositStatuses.Orphaned, Assert.Single(deposits).Status);
@@ -260,7 +296,7 @@ public sealed class DepositTests : IAsyncLifetime
         // Past finality the loss, if there ever were one, is real. Quietly
         // flipping a status would leave the ledger and this table disagreeing
         // about money that is already in somebody's balance.
-        Assert.False(await w.Service.OrphanAsync(CustodyNetworks.Tron, tx));
+        Assert.False(await w.Service.OrphanAsync(Tron.NetworkId, tx));
 
         var deposits = await w.Service.DepositsAsync(w.User);
         Assert.Equal(DepositStatuses.Credited, Assert.Single(deposits).Status);
@@ -275,6 +311,6 @@ internal sealed class FixedAddresses : IDepositAddresses
     public FixedAddresses(string address) => _address = address;
 
     public Task<IssuedAddress> IssueAsync(
-        string userId, CustodyNetwork network, CancellationToken cancellationToken = default) =>
+        string userId, CurrencyOnNetwork network, CancellationToken cancellationToken = default) =>
         Task.FromResult(new IssuedAddress(_address, "fixed"));
 }

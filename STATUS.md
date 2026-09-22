@@ -15,16 +15,17 @@ Those are four different things and several modules are only the first two.
 
 | Module | Routes | Tables | Tests | State |
 |---|---|---|---|---|
+| Catalog | 5 | 3 | 14 | **Works** |
 | Identity | 7 | — (Keycloak owns them) | 38 | **Works** |
 | Ledger | 0 | 4 | 16 + 15 domain | **Works**, no HTTP surface by design |
 | Wallet | 3 | — (reads the ledger) | 8 | **Works** |
 | Marketplace | 10 | 2 | 23 | **Works** |
 | P2P | 12 | 3 | 33 | **Works** — needs an operator |
-| Custody | 3 | 2 | 18 | **Works** — needs a custodian |
+| Custody | 3 | 2 | 20 | **Works** — needs a custodian |
 | Exchange | 0 | 0 | 4 | Contracts only |
 
-Platform: Api (4 tests), Data, Messaging (8), Money (54), AspNet, Serialization.
-End to end: 50. Architecture: 8. **279 in total**, against real Postgres,
+Platform: Api (4 tests), Data, Messaging (8), Money (65), AspNet, Serialization.
+End to end: 55. Architecture: 8. **311 in total**, against real Postgres,
 RabbitMQ and Keycloak, plus one capture tool that only runs when asked.
 
 What the whole thing can now do that it could not: **pay money out and take it
@@ -86,6 +87,63 @@ payment processor needs (they settle at T+1 and can reverse).
 
 ---
 
+## Catalog — currencies and chains, as tables
+
+The change everything multi-currency was waiting on. `Currency` was an `enum`
+with four members, which meant the set of currencies was decided at compile
+time: adding the Mexican peso was a deploy, adding forty of them was a deploy
+and a migration, and switching one off for a jurisdiction was not expressible
+at all.
+
+It is now a `readonly record struct` carrying a code and a scale, and the set
+lives in three tables — `catalog.currencies`, `catalog.networks` and
+`catalog.currency_networks`. The seed lists **4 enabled currencies** (E-ISLA,
+USDT, USDC, CUP) and **35 more switched off**: 23 from the Americas, 11 from
+Europe, and the yuan. Six chains, of which TRON is watched, and eight
+asset-on-chain pairs with real contract addresses, of which USDT-on-TRON is
+switched on.
+
+Three decisions carry the rest:
+
+**A currency and a chain are different things, and so is their pair.** USDT is
+not a TRON token — it is both a TRON token and an Ethereum one, and they are
+different assets that share a name and a price. Sending Ethereum USDT to a TRON
+address loses the money. `catalog.currency_networks` is what makes "USDT on
+TRON" a thing rather than a phrase, and it is why a deposit address is now
+asked for as `/v1/me/custody/addresses/{currency}/{network}` rather than by
+chain alone.
+
+**A stored amount says what a unit is.** Minor units plus a code do not say
+whether `1500000` is one and a half USDT or a million and a half; the enum used
+to answer that. Every table holding an amount now carries the scale beside the
+code, so a row read years from now means what it meant when it was written.
+
+**A scale can never change.** A trigger on `catalog.currencies` refuses any
+update that would alter one. Changing USDT from six places to two would not
+reprice anything — it would silently restate every stored balance by a factor
+of ten thousand, and no migration, script or console session can do it by
+accident.
+
+**Enforced at the ledger, not at each caller.** `PostgresLedger` takes the
+catalogue and refuses a posting — or an account — in a currency that is not
+listed or is switched off, and refuses a leg whose scale disagrees with the
+table even though it balances perfectly. Six modules each checking would be six
+checks, and the forgotten one would be the one that mattered. Reading is
+different: `Describe` answers for a disabled currency, because a statement
+containing an old entry has to keep working after a currency is withdrawn.
+
+**Switching one on takes no deploy**, which is the whole point, and there is an
+end-to-end test that proves it: a `catalog-admin` flips MXN on through
+`/v1/admin/catalog/currencies/MXN/enabled`, and the same running process, the
+same ledger objects, start accepting it.
+
+**Not real yet:** the Flutter client still has its own `Currency` enum and
+still hard-codes three currencies. It should read `/v1/catalog/currencies` —
+that is the next piece of this work, and until it lands, switching a currency
+on server-side does not make it appear in the app.
+
+---
+
 ## E-ISLA — the internal unit, renamed
 
 `Currency.Usd` is now `Currency.EIsla`, code `EISLA`, two decimals. It is the
@@ -105,9 +163,13 @@ a `USD` row survived or the trigger did not come back. Four tests in
 every other test here runs against a database created a moment earlier, where
 it would sail over empty tables and prove only that it parses.
 
-The old code is **rejected on the wire**, not aliased. A body still saying
-`USD` comes back `400 malformed_request`, and there is an end-to-end test
-holding that open.
+The old code is **rejected**, not aliased, and where it is rejected moved when
+currencies became rows. It used to fail while reading the body, because no
+`USD` existed to read it as. Now the dollar is a listed currency — switched
+off, because IslaPay does not issue US dollars — so the body parses and the
+ledger declines the posting: `422 currency_unavailable`, with the code in
+`meta`. The refusal is the same and its reason is better. An end-to-end test
+holds it open.
 
 Fixing that test found something else, which was not this change's fault but
 was in its way: a malformed body did not produce an `ApiProblem` at all. The

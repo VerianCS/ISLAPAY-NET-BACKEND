@@ -124,5 +124,5 @@ public readonly record struct AccountId
             : value;
 
     public override string ToString() =>
-        $"{OwnerType.ToString().ToLowerInvariant()}:{Owner}:{Currency.Code()}";
+        $"{OwnerType.ToString().ToLowerInvariant()}:{Owner}:{Currency.Code}";
 }

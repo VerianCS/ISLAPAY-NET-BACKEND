@@ -1,3 +1,4 @@
+using IslaPay.TestSupport;
 using System.Text.Json;
 using IslaPay.Platform;
 using IslaPay.Platform.Api;
@@ -13,7 +14,7 @@ namespace IslaPay.Wallet.Tests;
 /// </summary>
 public class WalletWireTests
 {
-    private static readonly JsonSerializerOptions Json = IslaPayJson.Options;
+    private static readonly JsonSerializerOptions Json = IslaPayJson.Create(TestCurrencies.Scales);
 
     [Fact]
     public void Wallet_response_matches_the_contract_example()
@@ -21,7 +22,7 @@ public class WalletWireTests
         var response = new WalletResponse(
             Accounts:
             [
-                new AccountDto("EISLA", Money.Parse("1250.00", Currency.EIsla), "4587"),
+                new AccountDto("EISLA", Money.Parse("1250.00", TestCurrencies.EIsla), "4587"),
             ],
             Rates: new Dictionary<string, string> { ["EISLA_USDT"] = "1.0000" },
             Transactions: new CursorPage<TransactionDto>(
@@ -31,7 +32,7 @@ public class WalletWireTests
                         Id: "01JQ",
                         Type: LedgerEntryTypes.StorePurchase,
                         Meta: new Dictionary<string, string> { ["merchant"] = "Tienda Solar" },
-                        Amount: Money.Parse("-350.00", Currency.Usdt),
+                        Amount: Money.Parse("-350.00", TestCurrencies.Usdt),
                         OccurredAt: new DateTimeOffset(2026, 9, 16, 14, 42, 0, TimeSpan.Zero)),
                 ],
                 NextCursor: "eyJ"));
@@ -49,7 +50,7 @@ public class WalletWireTests
     public void Money_never_appears_as_a_bare_number()
     {
         var json = JsonSerializer.Serialize(
-            new RechargeRequest(Money.Parse("50.00", Currency.EIsla), "zelle"), Json);
+            new RechargeRequest(Money.Parse("50.00", TestCurrencies.EIsla), "zelle"), Json);
 
         Assert.Contains("\"amount\":\"50.00\"", json, StringComparison.Ordinal);
         Assert.DoesNotContain("\"amount\":50", json, StringComparison.Ordinal);
@@ -61,7 +62,7 @@ public class WalletWireTests
         var entry = new TransactionDto(
             "1", LedgerEntryTypes.Recharge,
             new Dictionary<string, string> { ["method"] = "zelle" },
-            Money.Parse("10.00", Currency.EIsla),
+            Money.Parse("10.00", TestCurrencies.EIsla),
             new DateTimeOffset(2026, 1, 2, 3, 4, 5, TimeSpan.FromHours(-5)));
 
         var json = JsonSerializer.Serialize(entry, Json);
@@ -85,7 +86,7 @@ public class WalletWireTests
 
 public class WalletForwardCompatibilityTests
 {
-    private static readonly JsonSerializerOptions Json = IslaPayJson.Options;
+    private static readonly JsonSerializerOptions Json = IslaPayJson.Create(TestCurrencies.Scales);
 
     [Fact]
     public void A_property_the_reader_does_not_know_is_ignored()
@@ -121,7 +122,7 @@ public class WalletForwardCompatibilityTests
 
 public class WalletErrorTests
 {
-    private static readonly JsonSerializerOptions Json = IslaPayJson.Options;
+    private static readonly JsonSerializerOptions Json = IslaPayJson.Create(TestCurrencies.Scales);
 
     [Fact]
     public void Problem_carries_the_meta_the_clients_type_needs()

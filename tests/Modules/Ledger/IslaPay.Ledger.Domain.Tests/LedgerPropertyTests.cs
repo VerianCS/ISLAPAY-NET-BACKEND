@@ -1,3 +1,4 @@
+using IslaPay.TestSupport;
 using CsCheck;
 using IslaPay.Platform;
 
@@ -17,11 +18,11 @@ namespace IslaPay.Ledger.Domain.Tests;
 public class LedgerPropertyTests
 {
     private static readonly Gen<Currency> AnyCurrency =
-        Gen.OneOfConst(Currency.EIsla, Currency.Usdc, Currency.Usdt);
+        Gen.OneOfConst(TestCurrencies.EIsla, TestCurrencies.Usdc, TestCurrencies.Usdt);
 
     /// <summary>Amounts up to ~10,000 units, never zero.</summary>
     private static Gen<Money> AmountIn(Currency currency) =>
-        Gen.Long[1, 10_000 * (long)Math.Pow(10, currency.Scale())]
+        Gen.Long[1, 10_000 * (long)Math.Pow(10, currency.Scale)]
             .Select(units => Money.FromMinorUnits(units, currency));
 
     private static readonly Gen<string> AnyUser =
@@ -124,7 +125,7 @@ public class LedgerPropertyTests
                         ledger.Post(Conversions.BuildTransfer(
                             Guid.NewGuid(), "alice", "bob",
                             Money.FromMinorUnits(
-                                (1 + i * 7919 % 4000) * (long)Math.Pow(10, currency.Scale() - 2),
+                                (1 + i * 7919 % 4000) * (long)Math.Pow(10, currency.Scale - 2),
                                 currency),
                             At(i + 1)));
                     }
@@ -142,7 +143,7 @@ public class LedgerPropertyTests
         // Atomicity. A posting that overdraws on its third leg must not have
         // written the first two — otherwise the ledger holds a state no rule
         // allows and the next reconciliation is the first anyone hears of it.
-        Gen.Select(AnyCurrency, AmountIn(Currency.EIsla))
+        Gen.Select(AnyCurrency, AmountIn(TestCurrencies.EIsla))
             .Sample((currency, _) =>
             {
                 var ledger = new Ledger();
@@ -155,7 +156,7 @@ public class LedgerPropertyTests
                     ledger.Post(Conversions.BuildTransfer(
                         Guid.NewGuid(), "alice", "bob",
                         Money.FromMinorUnits(
-                            100 * (long)Math.Pow(10, currency.Scale()), currency),
+                            100 * (long)Math.Pow(10, currency.Scale), currency),
                         At(1))));
 
                 Assert.Equal(before, ledger.Entries.Count);
@@ -174,7 +175,7 @@ public class LedgerPropertyTests
                 Fund(ledger, "alice", currency, "1000", 0);
 
                 var amount = Money.FromMinorUnits(
-                    5 * (long)Math.Pow(10, currency.Scale()), currency);
+                    5 * (long)Math.Pow(10, currency.Scale), currency);
                 var key = "retry-me";
 
                 var first = ledger.Post(Conversions.BuildTransfer(
@@ -271,7 +272,7 @@ public class LedgerPropertyTests
                 ledger.Post(Conversions.BuildTransfer(
                     postingId, user, "counterparty",
                     Money.FromMinorUnits(
-                        250 * (long)Math.Pow(10, currency.Scale() - 2), currency),
+                        250 * (long)Math.Pow(10, currency.Scale - 2), currency),
                     At(1)));
 
                 ledger.Post(ledger.BuildReversal(postingId, Guid.NewGuid(), At(2)));
@@ -286,7 +287,7 @@ public class LedgerPropertyTests
     [Fact]
     public void A_conversion_balances_in_both_currencies_at_any_amount()
     {
-        Gen.Select(AmountIn(Currency.EIsla), Gen.OneOfConst(Currency.Usdc, Currency.Usdt))
+        Gen.Select(AmountIn(TestCurrencies.EIsla), Gen.OneOfConst(TestCurrencies.Usdc, TestCurrencies.Usdt))
             .Sample((amount, to) =>
             {
                 var posting = Conversions.BuildConversion(
@@ -297,7 +298,7 @@ public class LedgerPropertyTests
                     var sum = posting.Legs
                         .Where(l => l.Amount.Currency == currency)
                         .Aggregate(Money.Zero(currency), (s, l) => s + l.Amount);
-                    Assert.True(sum.IsZero, $"{currency.Code()} legs sum to {sum}");
+                    Assert.True(sum.IsZero, $"{currency.Code} legs sum to {sum}");
                 }
             }, iter: 500);
     }
@@ -305,7 +306,7 @@ public class LedgerPropertyTests
     [Fact]
     public void A_conversion_fee_is_never_more_than_the_amount_converted()
     {
-        Gen.Select(AmountIn(Currency.EIsla), Gen.OneOfConst(Currency.Usdc, Currency.Usdt))
+        Gen.Select(AmountIn(TestCurrencies.EIsla), Gen.OneOfConst(TestCurrencies.Usdc, TestCurrencies.Usdt))
             .Sample((amount, to) =>
             {
                 var posting = Conversions.BuildConversion(
@@ -354,11 +355,11 @@ public class RoundingToNothingTests
     public void A_conversion_whose_fee_rounds_to_zero_still_happens(string amount)
     {
         var posting = Conversions.BuildConversion(
-            Guid.NewGuid(), "u1", Money.Parse(amount, Currency.EIsla),
-            Currency.Usdt, "1.0000", DateTimeOffset.UtcNow);
+            Guid.NewGuid(), "u1", Money.Parse(amount, TestCurrencies.EIsla),
+            TestCurrencies.Usdt, "1.0000", DateTimeOffset.UtcNow);
 
         // No fee leg at all, rather than one that moves nothing.
-        Assert.DoesNotContain(posting.Legs, l => l.Account == AccountId.Fees(Currency.EIsla));
+        Assert.DoesNotContain(posting.Legs, l => l.Account == AccountId.Fees(TestCurrencies.EIsla));
         Assert.All(posting.Legs, l => Assert.NotEqual(0, l.Amount.MinorUnits));
 
         // And it still balances in both currencies, which is the only thing
@@ -375,9 +376,9 @@ public class RoundingToNothingTests
     public void A_p2p_sale_whose_fee_rounds_to_zero_still_happens()
     {
         var posting = Conversions.BuildP2PSale(
-            Guid.NewGuid(), "u1", Money.Parse("0.12", Currency.EIsla), DateTimeOffset.UtcNow);
+            Guid.NewGuid(), "u1", Money.Parse("0.12", TestCurrencies.EIsla), DateTimeOffset.UtcNow);
 
-        Assert.DoesNotContain(posting.Legs, l => l.Account == AccountId.Fees(Currency.EIsla));
+        Assert.DoesNotContain(posting.Legs, l => l.Account == AccountId.Fees(TestCurrencies.EIsla));
         Assert.Equal(0, posting.Legs.Sum(l => l.Amount.MinorUnits));
     }
 
@@ -386,10 +387,10 @@ public class RoundingToNothingTests
     {
         // The guard above must not have quietly made every conversion free.
         var posting = Conversions.BuildConversion(
-            Guid.NewGuid(), "u1", Money.Parse("100.00", Currency.EIsla),
-            Currency.Usdt, "1.0000", DateTimeOffset.UtcNow);
+            Guid.NewGuid(), "u1", Money.Parse("100.00", TestCurrencies.EIsla),
+            TestCurrencies.Usdt, "1.0000", DateTimeOffset.UtcNow);
 
-        var fee = posting.Legs.Single(l => l.Account == AccountId.Fees(Currency.EIsla));
+        var fee = posting.Legs.Single(l => l.Account == AccountId.Fees(TestCurrencies.EIsla));
         Assert.Equal("1.00", fee.Amount.ToString());
     }
 }

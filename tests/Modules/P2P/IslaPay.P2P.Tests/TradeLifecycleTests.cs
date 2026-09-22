@@ -1,3 +1,4 @@
+using IslaPay.TestSupport;
 using IslaPay.Ledger.Contracts;
 using IslaPay.P2P.Contracts;
 using IslaPay.Platform;
@@ -28,9 +29,9 @@ public sealed class TradeLifecycleTests : IAsyncLifetime
 
     public Task DisposeAsync() => Task.CompletedTask;
 
-    private static Money EIsla(string amount) => Money.Parse(amount, Currency.EIsla);
+    private static Money EIsla(string amount) => Money.Parse(amount, TestCurrencies.EIsla);
 
-    private static Money Cup(string amount) => Money.Parse(amount, Currency.Cup);
+    private static Money Cup(string amount) => Money.Parse(amount, TestCurrencies.Cup);
 
     private sealed record World(
         P2PService Service, FakeLedger Ledger, FakeDirectory Directory,
@@ -51,8 +52,8 @@ public sealed class TradeLifecycleTests : IAsyncLifetime
         directory.Add(user, "Ana", phoneVerified: verified);
 
         var ledger = new FakeLedger();
-        ledger.Fund(AccountRef.SettlementFund(Currency.Cup), Cup(fundCup));
-        ledger.Fund(AccountRef.SettlementFund(Currency.EIsla), EIsla(fundEIsla));
+        ledger.Fund(AccountRef.SettlementFund(TestCurrencies.Cup), Cup(fundCup));
+        ledger.Fund(AccountRef.SettlementFund(TestCurrencies.EIsla), EIsla(fundEIsla));
 
         var clock = new FakeClock(DateTimeOffset.Parse("2026-02-01T10:00:00Z", null));
         options ??= new P2POptions();
@@ -80,15 +81,15 @@ public sealed class TradeLifecycleTests : IAsyncLifetime
         // 99 converted, not 100: the fee is taken before the exchange.
         Assert.Equal(Cup("11880.00"), trade.Local);
 
-        Assert.Equal(-10000, w.Ledger.Balance(AccountRef.User(w.User, Currency.EIsla)));
-        Assert.Equal(9900, w.Ledger.Balance(AccountRef.SettlementFund(Currency.EIsla)) - 1000000);
-        Assert.Equal(100, w.Ledger.Balance(AccountRef.Fees(Currency.EIsla)));
+        Assert.Equal(-10000, w.Ledger.Balance(AccountRef.User(w.User, TestCurrencies.EIsla)));
+        Assert.Equal(9900, w.Ledger.Balance(AccountRef.SettlementFund(TestCurrencies.EIsla)) - 1000000);
+        Assert.Equal(100, w.Ledger.Balance(AccountRef.Fees(TestCurrencies.EIsla)));
 
         // The local side: committed out of the fund and owed through escrow.
-        Assert.Equal(1188000, w.Ledger.Balance(AccountRef.Escrow(Currency.Cup)));
+        Assert.Equal(1188000, w.Ledger.Balance(AccountRef.Escrow(TestCurrencies.Cup)));
         Assert.Equal(
             100000000 - 1188000,
-            w.Ledger.Balance(AccountRef.SettlementFund(Currency.Cup)));
+            w.Ledger.Balance(AccountRef.SettlementFund(TestCurrencies.Cup)));
     }
 
     [SkippableFact]
@@ -101,13 +102,13 @@ public sealed class TradeLifecycleTests : IAsyncLifetime
         var paid = await w.Service.ConfirmPayoutAsync("op", Guid.Parse(trade.Id), "TM-99887");
 
         Assert.Equal(P2PTradeStatuses.Completed, paid.Status);
-        Assert.Equal(0, w.Ledger.Balance(AccountRef.Escrow(Currency.Cup)));
+        Assert.Equal(0, w.Ledger.Balance(AccountRef.Escrow(TestCurrencies.Cup)));
 
         // Positive on the mirror means sent out, the same convention a deposit
         // uses in reverse. It is what the operator reconciles against.
         Assert.Equal(
             1188000,
-            w.Ledger.Balance(AccountRef.External(Rail, Currency.Cup)));
+            w.Ledger.Balance(AccountRef.External(Rail, TestCurrencies.Cup)));
     }
 
     [SkippableFact]
@@ -125,10 +126,10 @@ public sealed class TradeLifecycleTests : IAsyncLifetime
 
         // Whole again: IslaPay did not provide the service, so it does not
         // keep the charge.
-        Assert.Equal(0, w.Ledger.Balance(AccountRef.User(w.User, Currency.EIsla)));
-        Assert.Equal(0, w.Ledger.Balance(AccountRef.Fees(Currency.EIsla)));
-        Assert.Equal(0, w.Ledger.Balance(AccountRef.Escrow(Currency.Cup)));
-        Assert.Equal(100000000, w.Ledger.Balance(AccountRef.SettlementFund(Currency.Cup)));
+        Assert.Equal(0, w.Ledger.Balance(AccountRef.User(w.User, TestCurrencies.EIsla)));
+        Assert.Equal(0, w.Ledger.Balance(AccountRef.Fees(TestCurrencies.EIsla)));
+        Assert.Equal(0, w.Ledger.Balance(AccountRef.Escrow(TestCurrencies.Cup)));
+        Assert.Equal(100000000, w.Ledger.Balance(AccountRef.SettlementFund(TestCurrencies.Cup)));
     }
 
     [SkippableFact]
@@ -207,7 +208,7 @@ public sealed class TradeLifecycleTests : IAsyncLifetime
         var cancelled = await w.Service.CancelAsync(w.User, Guid.Parse(trade.Id));
 
         Assert.Equal(P2PTradeStatuses.Refunded, cancelled.Status);
-        Assert.Equal(0, w.Ledger.Balance(AccountRef.User(w.User, Currency.EIsla)));
+        Assert.Equal(0, w.Ledger.Balance(AccountRef.User(w.User, TestCurrencies.EIsla)));
     }
 
     // ------------------------------------------------------------------- buy
@@ -240,12 +241,12 @@ public sealed class TradeLifecycleTests : IAsyncLifetime
         var credited = await w.Service.ConfirmReceiptAsync("op", Guid.Parse(trade.Id), "TM-12345");
 
         Assert.Equal(P2PTradeStatuses.Completed, credited.Status);
-        Assert.Equal(9900, w.Ledger.Balance(AccountRef.User(w.User, Currency.EIsla)));
-        Assert.Equal(100, w.Ledger.Balance(AccountRef.Fees(Currency.EIsla)));
+        Assert.Equal(9900, w.Ledger.Balance(AccountRef.User(w.User, TestCurrencies.EIsla)));
+        Assert.Equal(100, w.Ledger.Balance(AccountRef.Fees(TestCurrencies.EIsla)));
 
         // Negative on the mirror means received from outside.
-        Assert.Equal(-1250000, w.Ledger.Balance(AccountRef.External(Rail, Currency.Cup)));
-        Assert.Equal(100000000 + 1250000, w.Ledger.Balance(AccountRef.SettlementFund(Currency.Cup)));
+        Assert.Equal(-1250000, w.Ledger.Balance(AccountRef.External(Rail, TestCurrencies.Cup)));
+        Assert.Equal(100000000 + 1250000, w.Ledger.Balance(AccountRef.SettlementFund(TestCurrencies.Cup)));
     }
 
     [SkippableFact]
@@ -268,7 +269,7 @@ public sealed class TradeLifecycleTests : IAsyncLifetime
         var credited = await w.Service.ConfirmReceiptAsync("op", Guid.Parse(trade.Id), "TM-77");
 
         Assert.Equal(P2PTradeStatuses.Completed, credited.Status);
-        Assert.Equal(1980, w.Ledger.Balance(AccountRef.User(w.User, Currency.EIsla)));
+        Assert.Equal(1980, w.Ledger.Balance(AccountRef.User(w.User, TestCurrencies.EIsla)));
     }
 
     [SkippableFact]

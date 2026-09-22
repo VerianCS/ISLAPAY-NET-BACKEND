@@ -21,6 +21,7 @@
       that a module's tests stay inside it is not bent to allow it.
     -->
     <ProjectReference Include="..\..\..\src\IslaPay.Host\IslaPay.Host.csproj" />
+    <ProjectReference Include="..\..\..\src\Modules\Catalog\IslaPay.Catalog.Contracts\IslaPay.Catalog.Contracts.csproj" />
     <ProjectReference Include="..\..\Support\IslaPay.TestSupport\IslaPay.TestSupport.csproj" />
   </ItemGroup>
 

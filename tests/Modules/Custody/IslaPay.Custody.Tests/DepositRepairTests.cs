@@ -1,3 +1,5 @@
+using IslaPay.TestSupport;
+using IslaPay.Catalog.Contracts;
 using IslaPay.Custody.Contracts;
 using IslaPay.Ledger.Contracts;
 using IslaPay.Platform;
@@ -20,7 +22,7 @@ namespace IslaPay.Custody.Tests;
 [Collection(CustodyDefinition.Name)]
 public sealed class DepositRepairTests : IAsyncLifetime
 {
-    private static readonly CustodyNetwork Tron = CustodyNetworks.TronUsdt;
+    private static readonly CurrencyOnNetwork Tron = CustodyFixture.Tron;
 
     private readonly CustodyFixture _fixture;
 
@@ -30,7 +32,7 @@ public sealed class DepositRepairTests : IAsyncLifetime
 
     public Task DisposeAsync() => Task.CompletedTask;
 
-    private static Money Usdt(string amount) => Money.Parse(amount, Currency.Usdt);
+    private static Money Usdt(string amount) => Money.Parse(amount, TestCurrencies.Usdt);
 
     private sealed record World(
         CustodyService Service, FakeLedger Ledger, string User, string Address,
@@ -47,14 +49,14 @@ public sealed class DepositRepairTests : IAsyncLifetime
         var ledger = new FakeLedger();
         var clock = new FakeClock(DateTimeOffset.Parse("2026-02-01T10:00:00Z", null));
         var service = _fixture.Service(ledger, directory, clock: clock);
-        var address = (await service.AddressAsync(user, CustodyNetworks.Tron)).Address;
+        var address = (await service.AddressAsync(user, CurrencyCodes.Usdt, Tron.NetworkId)).Address;
 
         return new World(service, ledger, user, address, clock, new CustodyOptions());
     }
 
     private static ObservedTransfer Final(World w, string tx, string amount = "100.000000") =>
         new(
-            Network: CustodyNetworks.Tron,
+            Network: Tron.NetworkId,
             Address: w.Address,
             TxHash: tx,
             Amount: Usdt(amount),
@@ -71,7 +73,7 @@ public sealed class DepositRepairTests : IAsyncLifetime
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => w.Service.ObserveAsync(Final(w, "0xcrash")));
 
-        Assert.Equal(100_000_000, w.Ledger.Balance(AccountRef.User(w.User, Currency.Usdt)));
+        Assert.Equal(100_000_000, w.Ledger.Balance(AccountRef.User(w.User, TestCurrencies.Usdt)));
 
         await using (var db = _fixture.Context())
         {
@@ -88,7 +90,7 @@ public sealed class DepositRepairTests : IAsyncLifetime
 
         // Adopted, not repeated.
         Assert.Single(w.Ledger.Posted);
-        Assert.Equal(100_000_000, w.Ledger.Balance(AccountRef.User(w.User, Currency.Usdt)));
+        Assert.Equal(100_000_000, w.Ledger.Balance(AccountRef.User(w.User, TestCurrencies.Usdt)));
     }
 
     [SkippableFact]
@@ -119,7 +121,7 @@ public sealed class DepositRepairTests : IAsyncLifetime
         var done = Assert.Single(await w.Service.DepositsAsync(w.User));
         Assert.Equal(DepositStatuses.Credited, done.Status);
         Assert.Single(w.Ledger.Posted);
-        Assert.Equal(100_000_000, w.Ledger.Balance(AccountRef.User(w.User, Currency.Usdt)));
+        Assert.Equal(100_000_000, w.Ledger.Balance(AccountRef.User(w.User, TestCurrencies.Usdt)));
     }
 
     [SkippableFact]
@@ -139,7 +141,7 @@ public sealed class DepositRepairTests : IAsyncLifetime
 
         Assert.Equal(DepositStatuses.Credited, again!.Status);
         Assert.Single(w.Ledger.Posted);
-        Assert.Equal(100_000_000, w.Ledger.Balance(AccountRef.User(w.User, Currency.Usdt)));
+        Assert.Equal(100_000_000, w.Ledger.Balance(AccountRef.User(w.User, TestCurrencies.Usdt)));
     }
 
     [SkippableFact]

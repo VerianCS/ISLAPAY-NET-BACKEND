@@ -18,6 +18,7 @@
       phone. Marketplace is not here and must not be — the two modules solve
       the same shaped problem and share no code, by rule.
     -->
+    <ProjectReference Include="..\..\Catalog\IslaPay.Catalog.Contracts\IslaPay.Catalog.Contracts.csproj" />
     <ProjectReference Include="..\..\Ledger\IslaPay.Ledger.Contracts\IslaPay.Ledger.Contracts.csproj" />
     <ProjectReference Include="..\..\Identity\IslaPay.Identity.Contracts\IslaPay.Identity.Contracts.csproj" />
     <ProjectReference Include="..\..\..\Platform\IslaPay.Platform.AspNet\IslaPay.Platform.AspNet.csproj" />

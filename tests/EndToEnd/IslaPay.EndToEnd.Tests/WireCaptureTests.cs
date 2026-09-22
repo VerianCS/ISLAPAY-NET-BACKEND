@@ -1,3 +1,4 @@
+using IslaPay.TestSupport;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
@@ -40,7 +41,7 @@ namespace IslaPay.EndToEnd.Tests;
 [Trait("Category", "Integration")]
 public class WireCaptureTests
 {
-    private static readonly JsonSerializerOptions Json = IslaPayJson.Options;
+    private static readonly JsonSerializerOptions Json = IslaPayJson.Create(TestCurrencies.Scales);
     private readonly IslaPayHostFixture _fixture;
 
     public WireCaptureTests(IslaPayHostFixture fixture) => _fixture = fixture;
@@ -57,13 +58,13 @@ public class WireCaptureTests
         var sender = await RegisterAsync(host, verify: true);
         var recipient = await RegisterAsync(host, verify: false);
 
-        var money = Money.Parse("500.00", Currency.EIsla);
+        var money = Money.Parse("500.00", TestCurrencies.EIsla);
         await host.Services.GetRequiredService<ILedger>().PostAsync(new PostingRequest(
             Kind: "settlement",
             Legs:
             [
-                new PostingLeg(AccountRef.User(sender.UserId, Currency.EIsla), money),
-                new PostingLeg(AccountRef.CashFloat(Currency.EIsla), -money),
+                new PostingLeg(AccountRef.User(sender.UserId, TestCurrencies.EIsla), money),
+                new PostingLeg(AccountRef.CashFloat(TestCurrencies.EIsla), -money),
             ],
             Metadata: new Dictionary<string, string>(StringComparer.Ordinal)
             {
@@ -78,7 +79,7 @@ public class WireCaptureTests
         {
             Content = new StringContent(
                 JsonSerializer.Serialize(
-                    new TransferRequest(Money.Parse("15.00", Currency.EIsla), recipient.Email),
+                    new TransferRequest(Money.Parse("15.00", TestCurrencies.EIsla), recipient.Email),
                     Json),
                 Encoding.UTF8, "application/json"),
         };

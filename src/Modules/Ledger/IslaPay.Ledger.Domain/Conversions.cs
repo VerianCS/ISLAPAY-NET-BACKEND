@@ -69,7 +69,7 @@ public static class Conversions
         if (amount.Currency == to)
         {
             throw new ArgumentException(
-                $"Converting {to.Code()} to itself is not a conversion.", nameof(to));
+                $"Converting {to.Code} to itself is not a conversion.", nameof(to));
         }
 
         var from = amount.Currency;
@@ -80,7 +80,7 @@ public static class Conversions
         if (!received.IsPositive)
         {
             throw new ArgumentException(
-                $"{amount} at {rate} nets nothing in {to.Code()}; the amount is too small to convert.",
+                $"{amount} at {rate} nets nothing in {to.Code}; the amount is too small to convert.",
                 nameof(amount));
         }
 

@@ -1,3 +1,4 @@
+using IslaPay.TestSupport;
 using System.Text.Json;
 using IslaPay.Identity.Contracts;
 using IslaPay.Platform.Serialization;
@@ -9,7 +10,7 @@ namespace IslaPay.Identity.Tests;
 /// </summary>
 public class IdentityWireTests
 {
-    private static readonly JsonSerializerOptions Json = IslaPayJson.Options;
+    private static readonly JsonSerializerOptions Json = IslaPayJson.Create(TestCurrencies.Scales);
 
     [Fact]
     public void A_session_serialises_to_the_shape_the_client_reads()

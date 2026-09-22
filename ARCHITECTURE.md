@@ -26,6 +26,9 @@ src/Modules/<Context>/
   IslaPay.<Context>.Contracts       the module's public face — DTOs, codes, events
   IslaPay.<Context>                 its internals: domain, infrastructure, routes
 
+  Catalog is underneath the rest: which currencies and chains exist, as rows.
+  Nearly everything that touches money depends on its .Contracts.
+
 src/IslaPay.Host/      the composition root, and nothing else
 ```
 
@@ -125,7 +128,37 @@ Working end to end:
 
 ### The currencies, and where each one is allowed
 
-`Currency` has four members and they are not four of a kind.
+`Currency` is a code and a scale, and **the set of them is a table**. It was an
+`enum` with four members until this branch, and that single fact was what
+stopped the system from being multi-currency: adding one meant a deploy, and
+switching one off for a jurisdiction was not expressible at all.
+
+`Catalog` owns `catalog.currencies`, `catalog.networks` and
+`catalog.currency_networks`, and answers through `ICurrencyCatalog`. Three
+things follow, and they are the shape of everything below:
+
+- **The catalogue is synchronous.** It is read on nearly every path that
+  touches money, including inside arithmetic, so it cannot be a query. It is
+  loaded once into an immutable snapshot at start-up and replaced whole by
+  `RefreshAsync`; a reader never blocks and never sees half a change.
+- **A row carries its own scale.** `Money` holds a `Currency` that holds a
+  scale, so writing an amount needs no lookup and only *reading* one does.
+  Every table holding an amount stores the scale beside the code, so a row
+  means what it meant when it was written. A trigger refuses any change to a
+  scale, which is what makes that safe forever.
+- **The ledger is where the rule is kept.** `PostgresLedger` refuses a posting
+  or an account in a currency that is unlisted or switched off, and refuses a
+  leg whose scale disagrees with the table. It is the one place every movement
+  of money passes through, so it is the only place the rule can be a guarantee
+  rather than a convention each module keeps separately. Reading is the
+  exception: `Describe` answers for a withdrawn currency, because an old entry
+  does not stop being true.
+
+An asset and a chain are separate, and so is their pair. USDT is not a TRON
+token — it is a TRON token *and* an Ethereum one, and they are different assets
+that share a name and a price. Anything on-chain therefore names both.
+
+The four currently enabled are not four of a kind.
 
 **E-ISLA** (`EISLA`, two decimals) is the application's own unit and what a
 balance is usually quoted in. It is not a token and it is not on a chain: it is
@@ -138,16 +171,19 @@ It was called `USD` until this branch. The rename is a rename: no amount, no
 account and no moment changed, and `ledger/002_eisla.sql` says at length why a
 script is allowed to rewrite an append-only table to do it. The old code is
 **not** accepted as an alias, because a client that kept working while telling
-people they hold US dollars is worse than one that breaks.
+people they hold US dollars is worse than one that breaks. The dollar is now a
+listed currency in its own right — switched off — so a body denominated in it
+is refused by the ledger as `currency_unavailable` rather than by the parser.
 
-**USDC** and **USDT** (six decimals) are the on-chain ones, and the only two
-for which `IsOnChain` is true and a network has to be chosen.
+**USDC** and **USDT** (six decimals) are the on-chain ones — `kind` is
+`stablecoin` — and the only two for which a chain has to be chosen.
 
 **CUP** belongs to P2P and nowhere else. It is the local leg of a trade: the
 platform's obligation to send somebody pesos, held by the settlement fund and
 owed through escrow until an operator pays it out. No customer account is ever
-opened in it — `IsCustomerHoldable` refuses, and it is absent from
-`WalletService.OpenedOnRegistration`. When the exchange and custody arrive,
+opened in it — its `customer_holdable` is false, so it is absent from
+`ICurrencyCatalog.Holdable`, which is what `WalletService.OpenedOnRegistration`
+now returns instead of a list written in code. When the exchange and custody arrive,
 their escrow exists in E-ISLA, USDC and USDT only; a CUP escrow outside P2P
 would mean some other module had started owing pesos, which is a thing only the
 P2P desk does.

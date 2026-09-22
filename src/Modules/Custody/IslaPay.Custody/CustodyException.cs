@@ -23,18 +23,18 @@ public sealed class CustodyException : Exception, IslaPay.Platform.Api.IApiFailu
     public static CustodyException UnknownNetwork(string? id) => new(
         CustodyErrors.UnknownNetwork,
         StatusCodes.NotFound,
-        $"This build does not watch '{id}'.");
+        $"'{id}' is not a chain this build watches.");
 
     public static CustodyException CurrencyNotOnNetwork(
-        CustodyNetwork network, string? currency) => new(
+        string? currency, string? network) => new(
         CustodyErrors.CurrencyNotOnNetwork,
         StatusCodes.Unprocessable,
-        $"{network.Name} carries {network.Currency.Code()}, not '{currency}'.")
+        $"'{currency}' is not available on '{network}'.")
     {
         Meta = new Dictionary<string, object>(StringComparer.Ordinal)
         {
-            ["network"] = network.Id,
-            ["currency"] = network.Currency.Code(),
+            ["network"] = network ?? string.Empty,
+            ["currency"] = currency ?? string.Empty,
         },
     };
 

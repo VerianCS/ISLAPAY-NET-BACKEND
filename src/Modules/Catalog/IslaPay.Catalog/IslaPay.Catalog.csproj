@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <EmbeddedResource Include="Migrations\**\*.sql" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\IslaPay.Catalog.Contracts\IslaPay.Catalog.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\Platform\IslaPay.Platform.AspNet\IslaPay.Platform.AspNet.csproj" />
+    <ProjectReference Include="..\..\..\Platform\IslaPay.Platform.Data\IslaPay.Platform.Data.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,3 +1,4 @@
+using IslaPay.TestSupport;
 using System.Text.Json;
 using IslaPay.Exchange.Contracts;
 using IslaPay.Platform;
@@ -7,7 +8,7 @@ namespace IslaPay.Exchange.Tests;
 
 public class ExchangeWireTests
 {
-    private static readonly JsonSerializerOptions Json = IslaPayJson.Options;
+    private static readonly JsonSerializerOptions Json = IslaPayJson.Create(TestCurrencies.Scales);
 
     [Fact]
     public void An_unexecutable_quote_is_a_normal_response_with_a_reason()
@@ -16,9 +17,9 @@ public class ExchangeWireTests
             QuoteId: "01JQ",
             From: "EISLA",
             To: "USDT",
-            Amount: Money.Parse("100.00", Currency.EIsla),
-            Fee: Money.Parse("1.00", Currency.EIsla),
-            Received: Money.Parse("99.00", Currency.Usdt),
+            Amount: Money.Parse("100.00", TestCurrencies.EIsla),
+            Fee: Money.Parse("1.00", TestCurrencies.EIsla),
+            Received: Money.Parse("99.00", TestCurrencies.Usdt),
             Rate: "1.0000",
             ExpiresAt: new DateTimeOffset(2026, 9, 17, 10, 0, 30, TimeSpan.Zero),
             Executable: false,
@@ -38,9 +39,9 @@ public class ExchangeWireTests
     {
         var quote = new QuoteResponse(
             "01JQ", "EISLA", "USDT",
-            Money.Parse("100.00", Currency.EIsla),
-            Money.Parse("1.00", Currency.EIsla),
-            Money.Parse("99.00", Currency.Usdt),
+            Money.Parse("100.00", TestCurrencies.EIsla),
+            Money.Parse("1.00", TestCurrencies.EIsla),
+            Money.Parse("99.00", TestCurrencies.Usdt),
             "1.0000",
             new DateTimeOffset(2026, 9, 17, 10, 0, 30, TimeSpan.Zero),
             Executable: true);

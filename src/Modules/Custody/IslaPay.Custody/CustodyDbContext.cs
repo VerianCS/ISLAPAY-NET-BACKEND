@@ -14,6 +14,17 @@ public sealed class DepositAddress
 
     public string CurrencyCode { get; set; } = string.Empty;
 
+    /// <summary>
+    /// The currency's decimal places, stored beside its code.
+    /// </summary>
+    /// <remarks>
+    /// A row carries what a unit is. Minor units plus a code do not say
+    /// whether 1500000 is one and a half USDT or a million and a half, and
+    /// the answer used to come from a compile-time enum — the thing the
+    /// catalogue replaced.
+    /// </remarks>
+    public int CurrencyScale { get; set; }
+
     public string Address { get; set; } = string.Empty;
 
     /// <summary>Opaque: whatever the custodian needs to find the key again.</summary>
@@ -21,7 +32,7 @@ public sealed class DepositAddress
 
     public DateTimeOffset IssuedAt { get; set; }
 
-    public Currency Currency => CurrencyExtensions.ParseCode(CurrencyCode);
+    public Currency Currency => Currency.Of(CurrencyCode, CurrencyScale);
 }
 
 /// <summary>A row of <c>custody.deposits</c>.</summary>
@@ -36,6 +47,9 @@ public sealed class Deposit
     public string Network { get; set; } = string.Empty;
 
     public string CurrencyCode { get; set; } = string.Empty;
+
+    /// <summary>See <see cref="DepositAddress.CurrencyScale"/>.</summary>
+    public int CurrencyScale { get; set; }
 
     public string TxHash { get; set; } = string.Empty;
 
@@ -57,7 +71,7 @@ public sealed class Deposit
 
     public DateTimeOffset? CreditedAt { get; set; }
 
-    public Currency Currency => CurrencyExtensions.ParseCode(CurrencyCode);
+    public Currency Currency => Currency.Of(CurrencyCode, CurrencyScale);
 
     public Money Amount => Money.FromMinorUnits(AmountMinor, Currency);
 
@@ -96,6 +110,7 @@ public sealed class CustodyDbContext : DbContext
             entity.Property(a => a.UserId).HasColumnName("user_id");
             entity.Property(a => a.Network).HasColumnName("network");
             entity.Property(a => a.CurrencyCode).HasColumnName("currency");
+            entity.Property(a => a.CurrencyScale).HasColumnName("currency_scale");
             entity.Property(a => a.Address).HasColumnName("address");
             entity.Property(a => a.CustodianRef).HasColumnName("custodian_ref");
             entity.Property(a => a.IssuedAt).HasColumnName("issued_at");
@@ -110,6 +125,7 @@ public sealed class CustodyDbContext : DbContext
             entity.Property(d => d.AddressId).HasColumnName("address_id");
             entity.Property(d => d.Network).HasColumnName("network");
             entity.Property(d => d.CurrencyCode).HasColumnName("currency");
+            entity.Property(d => d.CurrencyScale).HasColumnName("currency_scale");
             entity.Property(d => d.TxHash).HasColumnName("tx_hash");
             entity.Property(d => d.OutputIndex).HasColumnName("output_index");
             entity.Property(d => d.AmountMinor).HasColumnName("amount_minor");

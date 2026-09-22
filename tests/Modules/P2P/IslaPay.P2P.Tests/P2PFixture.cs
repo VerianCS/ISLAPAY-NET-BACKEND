@@ -1,3 +1,4 @@
+using IslaPay.Catalog.Contracts;
 using IslaPay.Identity.Contracts;
 using IslaPay.Ledger.Contracts;
 using IslaPay.Platform;
@@ -51,12 +52,15 @@ public sealed class P2PFixture : PostgresFixture
             """);
     }
 
+    /// <summary>The seeded catalogue, as every test here sees it.</summary>
+    public static ICurrencyCatalog Catalog { get; } = new TestCatalog();
+
     public P2PService Service(
         FakeLedger ledger,
         FakeDirectory directory,
         P2POptions? options = null,
         TimeProvider? clock = null) =>
-        new(Context(), ledger, directory, options ?? new P2POptions(), clock);
+        new(Context(), ledger, Catalog, directory, options ?? new P2POptions(), clock);
 }
 
 [CollectionDefinition(Name)]
@@ -167,7 +171,7 @@ public sealed class FakeLedger : ILedger
             if (sum != 0)
             {
                 throw new InvalidOperationException(
-                    $"The {group.Key.Code()} legs sum to {sum}, not zero.");
+                    $"The {group.Key.Code} legs sum to {sum}, not zero.");
             }
         }
 

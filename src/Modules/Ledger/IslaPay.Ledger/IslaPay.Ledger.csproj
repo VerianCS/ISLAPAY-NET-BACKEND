@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\IslaPay.Ledger.Contracts\IslaPay.Ledger.Contracts.csproj" />
+    <ProjectReference Include="..\..\Catalog\IslaPay.Catalog.Contracts\IslaPay.Catalog.Contracts.csproj" />
     <ProjectReference Include="..\IslaPay.Ledger.Domain\IslaPay.Ledger.Domain.csproj" />
     <ProjectReference Include="..\..\..\Platform\IslaPay.Platform.AspNet\IslaPay.Platform.AspNet.csproj" />
     <ProjectReference Include="..\..\..\Platform\IslaPay.Platform.Data\IslaPay.Platform.Data.csproj" />

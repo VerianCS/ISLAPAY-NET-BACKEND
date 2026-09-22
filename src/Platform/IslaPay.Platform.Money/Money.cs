@@ -11,7 +11,7 @@ namespace IslaPay.Platform;
 /// transit: a binary float cannot represent 0.01, so arithmetic on it drifts
 /// and two systems that both "have" the same balance can disagree by a cent.
 /// Every value is an integer of minor units (see
-/// <see cref="CurrencyExtensions.Scale"/>), so addition and subtraction are
+/// <see cref="Currency.Scale"/>), so addition and subtraction are
 /// exact and only division has to make a decision — which this type always
 /// makes explicitly.
 /// </para>
@@ -46,13 +46,13 @@ public readonly record struct Money : IComparable<Money>
     /// </summary>
     public static Money FromDecimal(decimal value, Currency currency)
     {
-        var factor = Pow10(currency.Scale());
+        var factor = Pow10(currency.Scale);
         var scaled = value * factor;
         if (scaled != decimal.Truncate(scaled))
         {
             throw new ArgumentException(
-                $"{value} has more precision than {currency.Code()} holds " +
-                $"({currency.Scale()} decimal places).",
+                $"{value} has more precision than {currency.Code} holds " +
+                $"({currency.Scale} decimal places).",
                 nameof(value));
         }
 
@@ -64,8 +64,14 @@ public readonly record struct Money : IComparable<Money>
     /// <summary>
     /// Parses the wire form: a decimal string plus a currency code.
     /// </summary>
-    public static Money Parse(string amount, string currencyCode) =>
-        TryParse(amount, currencyCode, out var money)
+    /// <remarks>
+    /// Takes the scales rather than resolving the code itself. A code alone
+    /// does not say how many decimal places it has, and guessing from the
+    /// string — treating <c>"1.5"</c> as scale one — would make the same
+    /// amount parse differently depending on how it happened to be written.
+    /// </remarks>
+    public static Money Parse(string amount, string currencyCode, ICurrencyScales scales) =>
+        TryParse(amount, currencyCode, scales, out var money)
             ? money
             : throw new FormatException(
                 $"'{amount}' {currencyCode} is not a valid amount.");
@@ -74,13 +80,17 @@ public readonly record struct Money : IComparable<Money>
         TryParse(amount, currency, out var money)
             ? money
             : throw new FormatException(
-                $"'{amount}' {currency.Code()} is not a valid amount.");
+                $"'{amount}' {currency.Code} is not a valid amount.");
 
-    public static bool TryParse(string? amount, string? currencyCode, out Money money)
+    public static bool TryParse(
+        string? amount, string? currencyCode, ICurrencyScales scales, out Money money)
     {
+        ArgumentNullException.ThrowIfNull(scales);
+
         money = default;
-        return CurrencyExtensions.TryParseCode(currencyCode, out var currency)
-               && TryParse(amount, currency, out money);
+        return currencyCode is not null
+               && scales.TryGetScale(currencyCode, out var scale)
+               && TryParse(amount, Currency.Of(currencyCode, scale), out money);
     }
 
     /// <summary>
@@ -97,6 +107,7 @@ public readonly record struct Money : IComparable<Money>
     public static bool TryParse(string? amount, Currency currency, out Money money)
     {
         money = default;
+        if (!currency.IsDefined) return false;
         if (string.IsNullOrEmpty(amount)) return false;
 
         var span = amount.AsSpan();
@@ -130,7 +141,7 @@ public readonly record struct Money : IComparable<Money>
 
         if (digits == 0) return false;
 
-        var scale = currency.Scale();
+        var scale = currency.Scale;
         var fractionDigits = 0;
 
         if (i < span.Length)
@@ -180,7 +191,7 @@ public readonly record struct Money : IComparable<Money>
     /// </summary>
     public override string ToString()
     {
-        var scale = Currency.Scale();
+        var scale = Currency.Scale;
         var negative = MinorUnits < 0;
         // Negating in ulong space so long.MinValue does not overflow.
         var magnitude = negative ? (ulong)(-(MinorUnits + 1)) + 1 : (ulong)MinorUnits;
@@ -196,7 +207,7 @@ public readonly record struct Money : IComparable<Money>
     }
 
     /// <summary>Major units as a decimal. For reporting, never for arithmetic.</summary>
-    public decimal ToDecimal() => (decimal)MinorUnits / Pow10(Currency.Scale());
+    public decimal ToDecimal() => (decimal)MinorUnits / Pow10(Currency.Scale);
 
     // -------------------------------------------------------------- arithmetic
 
@@ -260,8 +271,8 @@ public readonly record struct Money : IComparable<Money>
 
         // decimal is base-10, so this scaling is exact for any amount the
         // ledger can hold; the only rounding is the deliberate one below.
-        var major = (decimal)MinorUnits / Pow10(Currency.Scale());
-        var converted = major * rate * Pow10(target.Scale());
+        var major = (decimal)MinorUnits / Pow10(Currency.Scale);
+        var converted = major * rate * Pow10(target.Scale);
         return new Money((long)Math.Round(converted, 0, rounding), target);
     }
 
@@ -272,7 +283,7 @@ public readonly record struct Money : IComparable<Money>
         if (a.Currency != b.Currency)
         {
             throw new InvalidOperationException(
-                $"Cannot combine {a.Currency.Code()} with {b.Currency.Code()}. " +
+                $"Cannot combine {a.Currency.Code} with {b.Currency.Code}. " +
                 "Convert explicitly through the exchange instead.");
         }
     }

@@ -1,3 +1,4 @@
+using IslaPay.TestSupport;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -31,7 +32,7 @@ namespace IslaPay.EndToEnd.Tests;
 public class MarketplaceTests
 {
     private const string Password = "Correct-Horse-9";
-    private static readonly JsonSerializerOptions Json = IslaPayJson.Options;
+    private static readonly JsonSerializerOptions Json = IslaPayJson.Create(TestCurrencies.Scales);
 
     private readonly IslaPayHostFixture _fixture;
 
@@ -315,7 +316,7 @@ public class MarketplaceTests
                 Description: "Poco uso",
                 Category: "Deportes",
                 Condition: "Como nuevo",
-                Price: Money.Parse(price, Currency.EIsla),
+                Price: Money.Parse(price, TestCurrencies.EIsla),
                 Location: "Habana"),
             Json);
 
@@ -385,7 +386,7 @@ public class MarketplaceTests
             WHERE a.owner_type = 'platform' AND a.owner = 'escrow' AND e.currency = 'EISLA';
             """, connection);
 
-        return Money.FromMinorUnits((long)(await command.ExecuteScalarAsync())!, Currency.EIsla);
+        return Money.FromMinorUnits((long)(await command.ExecuteScalarAsync())!, TestCurrencies.EIsla);
     }
 
     private static async Task<Account> RegisterAsync(IslaPayHost host)
@@ -425,7 +426,7 @@ public class MarketplaceTests
     private static async Task<Account> FundedUserAsync(IslaPayHost host, string amount)
     {
         var account = await VerifiedUserAsync(host);
-        var money = Money.Parse(amount, Currency.EIsla);
+        var money = Money.Parse(amount, TestCurrencies.EIsla);
 
         // There is no deposit endpoint yet, so this posts a settlement against
         // the platform's float — the call a recharge will make when it exists.
@@ -433,8 +434,8 @@ public class MarketplaceTests
             Kind: "settlement",
             Legs:
             [
-                new PostingLeg(AccountRef.User(account.UserId, Currency.EIsla), money),
-                new PostingLeg(AccountRef.CashFloat(Currency.EIsla), -money),
+                new PostingLeg(AccountRef.User(account.UserId, TestCurrencies.EIsla), money),
+                new PostingLeg(AccountRef.CashFloat(TestCurrencies.EIsla), -money),
             ],
             Metadata: new Dictionary<string, string>(StringComparer.Ordinal) { ["method"] = "test" }));
 
@@ -457,8 +458,8 @@ public class MarketplaceTests
     private static async Task<Money> EIslaBalanceAsync(ILedger ledger, string userId)
     {
         var balances = await ledger.BalancesAsync(userId);
-        return balances.FirstOrDefault(b => b.Currency == Currency.EIsla)?.Balance
-            ?? Money.Zero(Currency.EIsla);
+        return balances.FirstOrDefault(b => b.Currency == TestCurrencies.EIsla)?.Balance
+            ?? Money.Zero(TestCurrencies.EIsla);
     }
 
     private static async Task<T> Read<T>(HttpResponseMessage response)

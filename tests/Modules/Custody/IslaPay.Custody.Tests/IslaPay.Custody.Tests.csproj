@@ -14,6 +14,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\..\..\src\Modules\Custody\IslaPay.Custody\IslaPay.Custody.csproj" />
+    <ProjectReference Include="..\..\..\..\src\Modules\Catalog\IslaPay.Catalog.Contracts\IslaPay.Catalog.Contracts.csproj" />
     <!--
       The ledger only through its contract, which rule 6 requires and which is
       what these tests want anyway: a fake ILedger can be made to commit a

@@ -1,3 +1,4 @@
+using IslaPay.Catalog;
 using IslaPay.Custody;
 using IslaPay.Identity;
 using IslaPay.Ledger;
@@ -29,6 +30,8 @@ builder.AddIslaPayPlatform(
         Authority = keycloak.Issuer,
         Audience = keycloak.Audience,
     },
+    // First: every other module asks it what a currency is.
+    new CatalogModule(),
     new IdentityModule(),
     new LedgerModule(),
     new WalletModule(),

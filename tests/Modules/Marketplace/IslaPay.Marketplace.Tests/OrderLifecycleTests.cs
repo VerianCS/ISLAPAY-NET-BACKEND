@@ -1,3 +1,4 @@
+using IslaPay.TestSupport;
 using IslaPay.Ledger.Contracts;
 using IslaPay.Marketplace.Contracts;
 using IslaPay.Platform;
@@ -26,7 +27,7 @@ public sealed class OrderLifecycleTests : IAsyncLifetime
 
     public Task DisposeAsync() => Task.CompletedTask;
 
-    private static Money EIsla(string amount) => Money.Parse(amount, Currency.EIsla);
+    private static Money EIsla(string amount) => Money.Parse(amount, TestCurrencies.EIsla);
 
     private sealed record World(
         MarketplaceService Service, FakeLedger Ledger, FakeDirectory Directory,
@@ -55,7 +56,7 @@ public sealed class OrderLifecycleTests : IAsyncLifetime
         Description: "Poco uso",
         Category: "Deportes",
         Condition: "Como nuevo",
-        Price: Money.Parse(price, Currency.EIsla),
+        Price: Money.Parse(price, TestCurrencies.EIsla),
         Location: "Habana",
         Photos: []);
 
@@ -75,8 +76,8 @@ public sealed class OrderLifecycleTests : IAsyncLifetime
         // The buyer is down the whole price and escrow holds it. Not a flag on
         // a row: the balance a buyer sees has to reflect the commitment, or
         // the same money can be promised to three sellers.
-        Assert.Equal(-10000, w.Ledger.Balance(AccountRef.User(w.Buyer, Currency.EIsla)));
-        Assert.Equal(10000, w.Ledger.Balance(AccountRef.Escrow(Currency.EIsla)));
+        Assert.Equal(-10000, w.Ledger.Balance(AccountRef.User(w.Buyer, TestCurrencies.EIsla)));
+        Assert.Equal(10000, w.Ledger.Balance(AccountRef.Escrow(TestCurrencies.EIsla)));
 
         var after = await w.Service.ListingAsync(Guid.Parse(listing.Id));
         Assert.Equal(ListingStatuses.Reserved, after.Status);
@@ -111,9 +112,9 @@ public sealed class OrderLifecycleTests : IAsyncLifetime
         var released = await w.Service.RedeemAsync(w.Seller, placed.Code);
 
         Assert.Equal(OrderStatuses.Released, released.Status);
-        Assert.Equal(0, w.Ledger.Balance(AccountRef.Escrow(Currency.EIsla)));
-        Assert.Equal(9900, w.Ledger.Balance(AccountRef.User(w.Seller, Currency.EIsla)));
-        Assert.Equal(100, w.Ledger.Balance(AccountRef.Fees(Currency.EIsla)));
+        Assert.Equal(0, w.Ledger.Balance(AccountRef.Escrow(TestCurrencies.EIsla)));
+        Assert.Equal(9900, w.Ledger.Balance(AccountRef.User(w.Seller, TestCurrencies.EIsla)));
+        Assert.Equal(100, w.Ledger.Balance(AccountRef.Fees(TestCurrencies.EIsla)));
 
         var after = await w.Service.ListingAsync(Guid.Parse(listing.Id));
         Assert.Equal(ListingStatuses.Sold, after.Status);
@@ -155,7 +156,7 @@ public sealed class OrderLifecycleTests : IAsyncLifetime
         var again = await w.Service.RedeemAsync(w.Seller, placed.Code);
 
         Assert.Equal(OrderStatuses.Released, again.Status);
-        Assert.Equal(9900, w.Ledger.Balance(AccountRef.User(w.Seller, Currency.EIsla)));
+        Assert.Equal(9900, w.Ledger.Balance(AccountRef.User(w.Seller, TestCurrencies.EIsla)));
 
         // Two settlement postings would have paid twice out of an account that
         // is allowed to go negative — which would not have bounced.
@@ -174,9 +175,9 @@ public sealed class OrderLifecycleTests : IAsyncLifetime
         var cancelled = await w.Service.CancelAsync(w.Buyer, Guid.Parse(placed.Id));
 
         Assert.Equal(OrderStatuses.Cancelled, cancelled.Status);
-        Assert.Equal(0, w.Ledger.Balance(AccountRef.Escrow(Currency.EIsla)));
-        Assert.Equal(0, w.Ledger.Balance(AccountRef.User(w.Buyer, Currency.EIsla)));
-        Assert.Equal(0, w.Ledger.Balance(AccountRef.Fees(Currency.EIsla)));
+        Assert.Equal(0, w.Ledger.Balance(AccountRef.Escrow(TestCurrencies.EIsla)));
+        Assert.Equal(0, w.Ledger.Balance(AccountRef.User(w.Buyer, TestCurrencies.EIsla)));
+        Assert.Equal(0, w.Ledger.Balance(AccountRef.Fees(TestCurrencies.EIsla)));
 
         var after = await w.Service.ListingAsync(Guid.Parse(listing.Id));
         Assert.Equal(ListingStatuses.Active, after.Status);
@@ -194,7 +195,7 @@ public sealed class OrderLifecycleTests : IAsyncLifetime
             () => w.Service.CancelAsync(w.Buyer, Guid.Parse(placed.Id)));
 
         Assert.Equal(MarketplaceErrors.OrderNotHeld, refused.Code);
-        Assert.Equal(9900, w.Ledger.Balance(AccountRef.User(w.Seller, Currency.EIsla)));
+        Assert.Equal(9900, w.Ledger.Balance(AccountRef.User(w.Seller, TestCurrencies.EIsla)));
     }
 
     [SkippableFact]
@@ -294,8 +295,8 @@ public sealed class OrderLifecycleTests : IAsyncLifetime
         var placed = await w.Service.PlaceOrderAsync(w.Buyer, Guid.Parse(listing.Id));
         var released = await w.Service.RedeemAsync(w.Seller, placed.Code);
 
-        Assert.Equal(Money.Zero(Currency.EIsla), released.Fee);
-        Assert.Equal(12, w.Ledger.Balance(AccountRef.User(w.Seller, Currency.EIsla)));
+        Assert.Equal(Money.Zero(TestCurrencies.EIsla), released.Fee);
+        Assert.Equal(12, w.Ledger.Balance(AccountRef.User(w.Seller, TestCurrencies.EIsla)));
 
         var settlement = w.Ledger.Posted.Last();
         Assert.DoesNotContain(settlement.Legs, l => l.Amount.IsZero);
