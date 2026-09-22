@@ -140,8 +140,33 @@ public class OpenApiTests
                 anonymous.Add(schema.Name);
         }
 
+        // A property with a format and no type generates as `unknown`, which
+        // is worse than wrong: nothing can be done with an `unknown`, and the
+        // person generating the client has to guess what it was. Every
+        // timestamp in this API was one until somebody generated a client and
+        // looked.
+        var typeless = new List<string>();
+        foreach (var schema in document.RootElement
+            .GetProperty("components").GetProperty("schemas").EnumerateObject())
+        {
+            if (!schema.Value.TryGetProperty("properties", out var properties)) continue;
+
+            foreach (var property in properties.EnumerateObject())
+            {
+                var hasType = property.Value.TryGetProperty("type", out _);
+                var composed = property.Value.TryGetProperty("$ref", out _)
+                    || property.Value.TryGetProperty("allOf", out _)
+                    || property.Value.TryGetProperty("oneOf", out _)
+                    || property.Value.TryGetProperty("anyOf", out _);
+
+                if (!hasType && !composed)
+                    typeless.Add($"{schema.Name}.{property.Name}");
+            }
+        }
+
         Assert.True(untyped.Count == 0, $"Untyped 200s: {string.Join(", ", untyped)}");
         Assert.True(anonymous.Count == 0, $"Anonymous schemas: {string.Join(", ", anonymous)}");
+        Assert.True(typeless.Count == 0, $"Properties with no type: {string.Join(", ", typeless)}");
     }
 
     [SkippableFact]

@@ -114,6 +114,30 @@ public static class OpenApiDocument
                 return Task.CompletedTask;
             });
 
+            // A moment, as it actually travels.
+            //
+            // `Utc8601Converter` writes a string and the schema generator
+            // cannot see that: it emits `format: date-time` with no type at
+            // all, and a generated client types every timestamp as `unknown`
+            // — which is worse than wrong, because nothing can be done with
+            // an `unknown` and the person generating the client has to guess.
+            // Found by generating one.
+            options.AddSchemaTransformer((schema, context, cancellationToken) =>
+            {
+                var type = Nullable.GetUnderlyingType(context.JsonTypeInfo.Type)
+                    ?? context.JsonTypeInfo.Type;
+
+                if (type != typeof(DateTimeOffset) && type != typeof(DateTime))
+                    return Task.CompletedTask;
+
+                schema.Type = JsonSchemaType.String;
+                schema.Format = "date-time";
+                schema.Description = "UTC, ISO 8601, to the millisecond: 2026-09-22T14:05:09.123Z.";
+                schema.Examples = [JsonValue.Create("2026-09-22T14:05:09.123Z")];
+
+                return Task.CompletedTask;
+            });
+
             // Money, as it actually travels. Reflection sees MinorUnits and a
             // Currency struct; a client generated from that would send a shape
             // the converter refuses, and would refuse the shape it is sent.
