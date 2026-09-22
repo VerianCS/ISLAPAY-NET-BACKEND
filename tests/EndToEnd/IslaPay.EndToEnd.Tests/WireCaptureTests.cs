@@ -139,6 +139,98 @@ public class WireCaptureTests
         }
     }
 
+    /// <summary>
+    /// Writes a listing and both sides of an order, as the server answers.
+    /// </summary>
+    /// <remarks>
+    /// The Flutter client turns these into the screens a buyer and a seller
+    /// look at, and the two differ in one field that decides who can collect
+    /// the money: the buyer's copy carries the code and the seller's does not.
+    /// A hand-written fixture would agree with whoever typed it about that.
+    /// <para>Set <c>MARKET_CAPTURE_PATH</c> to a directory.</para>
+    /// </remarks>
+    [SkippableFact]
+    public async Task Capture_the_marketplace_responses()
+    {
+        Skip.IfNot(_fixture.Available, "no deps");
+        var into = Environment.GetEnvironmentVariable("MARKET_CAPTURE_PATH");
+        Skip.If(string.IsNullOrEmpty(into), "no capture path");
+
+        await using var host = _fixture.Build();
+        Directory.CreateDirectory(into!);
+
+        var seller = await RegisterAsync(host, verify: true);
+        var buyer = await RegisterAsync(host, verify: true);
+
+        var money = Money.Parse("60.00", TestCurrencies.EIsla);
+        await host.Services.GetRequiredService<ILedger>().PostAsync(new PostingRequest(
+            Kind: "settlement",
+            Legs:
+            [
+                new PostingLeg(AccountRef.User(buyer.UserId, TestCurrencies.EIsla), money),
+                new PostingLeg(AccountRef.CashFloat(TestCurrencies.EIsla), -money),
+            ],
+            Metadata: new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["method"] = "capture",
+            }));
+
+        using var sellerClient = host.CreateClient();
+        sellerClient.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", seller.AccessToken);
+        using var buyerClient = host.CreateClient();
+        buyerClient.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", buyer.AccessToken);
+
+        var published = await sellerClient.PostAsJsonAsync(
+            "/v1/listings",
+            new
+            {
+                title = "Bicicleta Cannondale",
+                description = "Poco uso, frenos nuevos",
+                category = "Deportes",
+                condition = "Como nuevo",
+                price = new { amount = "50.00", currency = "EISLA" },
+                location = "Vedado, La Habana",
+                photos = Array.Empty<string>(),
+            },
+            Json);
+
+        var listingBody = await published.Content.ReadAsStringAsync();
+        Assert.True(published.IsSuccessStatusCode, listingBody);
+        await File.WriteAllTextAsync(Path.Combine(into!, "listing.json"), listingBody);
+
+        var browse = await buyerClient.GetAsync(
+            new Uri("/v1/listings?limit=5", UriKind.Relative));
+        await File.WriteAllTextAsync(
+            Path.Combine(into!, "listings-page.json"),
+            await browse.Content.ReadAsStringAsync());
+
+        var listing = JsonSerializer.Deserialize<JsonElement>(listingBody, Json);
+        using var order = new HttpRequestMessage(HttpMethod.Post, "/v1/orders")
+        {
+            Content = new StringContent(
+                $$"""{"listingId":"{{listing.GetProperty("id").GetString()}}"}""",
+                Encoding.UTF8, "application/json"),
+        };
+        order.Headers.Add(IdempotencyMiddleware.HeaderName, Guid.NewGuid().ToString("N"));
+
+        var placed = await buyerClient.SendAsync(order);
+        var orderBody = await placed.Content.ReadAsStringAsync();
+        Assert.True(placed.IsSuccessStatusCode, orderBody);
+
+        // The buyer's copy: carries the code.
+        await File.WriteAllTextAsync(Path.Combine(into!, "order-buyer.json"), orderBody);
+
+        // The seller's copy of the same order: it must not.
+        var placedOrder = JsonSerializer.Deserialize<JsonElement>(orderBody, Json);
+        var asSeller = await sellerClient.GetAsync(new Uri(
+            $"/v1/orders/{placedOrder.GetProperty("id").GetString()}", UriKind.Relative));
+        await File.WriteAllTextAsync(
+            Path.Combine(into!, "order-seller.json"),
+            await asSeller.Content.ReadAsStringAsync());
+    }
+
     private sealed record Account(string UserId, string Email, string AccessToken);
 
     private static async Task<Account> RegisterAsync(IslaPayHost host, bool verify)
