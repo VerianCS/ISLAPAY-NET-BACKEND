@@ -96,6 +96,49 @@ public class WireCaptureTests
             into + ".transfer", await moved.Content.ReadAsStringAsync());
     }
 
+    /// <summary>
+    /// Writes the catalogue as the server really answers it.
+    /// </summary>
+    /// <remarks>
+    /// The Flutter client parses these three responses into the value every
+    /// screen reads a currency from, and a hand-written fixture on that side
+    /// is a fixture that agrees with itself. Capturing the real bodies is what
+    /// found two bugs the last time this trick was used here.
+    /// <para>
+    /// Set <c>CATALOG_CAPTURE_PATH</c> to a directory.
+    /// </para>
+    /// </remarks>
+    [SkippableFact]
+    public async Task Capture_the_catalogue_responses()
+    {
+        Skip.IfNot(_fixture.Available, "no deps");
+        var into = Environment.GetEnvironmentVariable("CATALOG_CAPTURE_PATH");
+        Skip.If(string.IsNullOrEmpty(into), "no capture path");
+
+        await using var host = _fixture.Build();
+        var user = await RegisterAsync(host, verify: true);
+
+        using var client = host.CreateClient();
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", user.AccessToken);
+
+        Directory.CreateDirectory(into!);
+
+        foreach (var (name, path) in new[]
+        {
+            ("currencies.json", "/v1/catalog/currencies"),
+            ("networks.json", "/v1/catalog/networks"),
+            ("networks-usdt.json", "/v1/catalog/networks?currency=USDT"),
+            ("networks-usdc.json", "/v1/catalog/networks?currency=USDC"),
+        })
+        {
+            var response = await client.GetAsync(new Uri(path, UriKind.Relative));
+            var body = await response.Content.ReadAsStringAsync();
+            Assert.True(response.IsSuccessStatusCode, $"{path}: {body}");
+            await File.WriteAllTextAsync(Path.Combine(into!, name), body);
+        }
+    }
+
     private sealed record Account(string UserId, string Email, string AccessToken);
 
     private static async Task<Account> RegisterAsync(IslaPayHost host, bool verify)

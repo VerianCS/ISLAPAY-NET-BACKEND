@@ -25,8 +25,16 @@ Those are four different things and several modules are only the first two.
 | Exchange | 0 | 0 | 4 | Contracts only |
 
 Platform: Api (4 tests), Data, Messaging (8), Money (65), AspNet, Serialization.
-End to end: 55. Architecture: 8. **311 in total**, against real Postgres,
-RabbitMQ and Keycloak, plus one capture tool that only runs when asked.
+End to end: 56. Architecture: 8. **312 in total**, against real Postgres,
+RabbitMQ and Keycloak, plus two capture tools that only run when asked.
+
+One of the end-to-end tests is the whole journey rather than a slice:
+`PurchaseJourneyTests` registers two strangers, proves both phones, signs in
+with a password, publishes an item, browses to it, pays for it and collects
+it — and narrates each step with the real figures. A system can pass every
+slice and still have no journey a person can complete; that test is the
+difference. Run it with `-l "console;verbosity=detailed"` to read the
+transcript.
 
 What the whole thing can now do that it could not: **pay money out and take it
 in**, through P2P, provided a person settles the local leg. What it still
