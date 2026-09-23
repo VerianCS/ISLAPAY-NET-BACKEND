@@ -52,6 +52,15 @@ public static class OpenApiDocument
 {
     public const string DocumentName = "v1";
 
+    /// <summary>The whole numbers this API sends, and never sends as strings.</summary>
+    private static readonly HashSet<Type> IntegerTypes =
+    [
+        typeof(byte), typeof(sbyte),
+        typeof(short), typeof(ushort),
+        typeof(int), typeof(uint),
+        typeof(long), typeof(ulong),
+    ];
+
     internal static void AddIslaPayOpenApi(IHostApplicationBuilder builder)
     {
         builder.Services.AddOpenApi(DocumentName, options =>
@@ -110,6 +119,32 @@ public static class OpenApiDocument
                         },
                     },
                 };
+
+                return Task.CompletedTask;
+            });
+
+            // A whole number is a number, and not also a string.
+            //
+            // The generator describes every integer as `integer | string`,
+            // which would be a kindness to a language that cannot hold a
+            // 64-bit value — except that this API's serializer does not accept
+            // a string there and never has. So the union is not a leniency,
+            // it is a claim that is false on the way in and noise on the way
+            // out: it makes every scale, count and confirmation arrive in a
+            // generated client as `number | string`, and every consumer write
+            // a coercion for a case the server would reject.
+            options.AddSchemaTransformer((schema, context, cancellationToken) =>
+            {
+                var type = Nullable.GetUnderlyingType(context.JsonTypeInfo.Type)
+                    ?? context.JsonTypeInfo.Type;
+
+                if (!IntegerTypes.Contains(type)) return Task.CompletedTask;
+
+                var nullable = schema.Type?.HasFlag(JsonSchemaType.Null) == true;
+                schema.Type = nullable
+                    ? JsonSchemaType.Integer | JsonSchemaType.Null
+                    : JsonSchemaType.Integer;
+                schema.Pattern = null;
 
                 return Task.CompletedTask;
             });

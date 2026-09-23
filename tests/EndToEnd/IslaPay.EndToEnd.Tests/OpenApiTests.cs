@@ -146,6 +146,7 @@ public class OpenApiTests
         // timestamp in this API was one until somebody generated a client and
         // looked.
         var typeless = new List<string>();
+        var loose = new List<string>();
         foreach (var schema in document.RootElement
             .GetProperty("components").GetProperty("schemas").EnumerateObject())
         {
@@ -160,13 +161,31 @@ public class OpenApiTests
                     || property.Value.TryGetProperty("anyOf", out _);
 
                 if (!hasType && !composed)
+                {
                     typeless.Add($"{schema.Name}.{property.Name}");
+                    continue;
+                }
+
+                // `integer | string` is the generator's kindness to languages
+                // that cannot hold 64 bits, and a claim this serializer would
+                // refuse: it does not read a number from a string. Left
+                // alone, it makes every scale and count arrive as
+                // `number | string` and every consumer write a coercion for a
+                // case that cannot happen.
+                if (hasType
+                    && property.Value.GetProperty("type") is { ValueKind: JsonValueKind.Array } union
+                    && union.EnumerateArray().Any(t => t.GetString() == "string")
+                    && union.EnumerateArray().Any(t => t.GetString() is "integer" or "number"))
+                {
+                    loose.Add($"{schema.Name}.{property.Name}");
+                }
             }
         }
 
         Assert.True(untyped.Count == 0, $"Untyped 200s: {string.Join(", ", untyped)}");
         Assert.True(anonymous.Count == 0, $"Anonymous schemas: {string.Join(", ", anonymous)}");
         Assert.True(typeless.Count == 0, $"Properties with no type: {string.Join(", ", typeless)}");
+        Assert.True(loose.Count == 0, $"Numbers described as also strings: {string.Join(", ", loose)}");
     }
 
     [SkippableFact]
