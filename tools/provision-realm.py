@@ -18,11 +18,6 @@ The clients it creates:
   islapay-app      public, direct grant only. A mobile app cannot keep a
                    secret, and nothing should be able to start a browser
                    redirect against it.
-  islapay-console  public, authorization code + PKCE only. The admin console
-                   runs in a browser, so it signs in *at Keycloak* rather than
-                   posting a password to a page of ours — which is what lets
-                   the people who can fund the float have SSO and a second
-                   factor without the console knowing anything about either.
   islapay-admin    confidential, service account. What the Identity module
                    uses to create accounts and reset passwords.
 """
@@ -31,15 +26,11 @@ import argparse, json, sys, urllib.request, urllib.parse, urllib.error
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--auth", default="http://localhost:8080",
                     help="Keycloak's base URL (default: %(default)s)")
-parser.add_argument("--console-origin", default="http://localhost:5173",
-                    help="where the console is served in development "
-                         "(default: %(default)s)")
 args = parser.parse_args()
 
 AUTH = args.auth.rstrip("/")
 REALM = "islapay"
 ADMIN_SECRET = "islapay-admin-secret"
-CONSOLE_ORIGIN = args.console_origin.rstrip("/")
 
 def call(method, path, token=None, body=None, form=None):
     url = f"{AUTH}{path}"
@@ -116,39 +107,6 @@ status, p = call("POST", f"/admin/realms/{REALM}/clients", T, body={
 })
 must(status, {201}, "crear el cliente público de la app", p)
 
-# Public as well, and for the same reason: code running in a browser cannot
-# keep a secret either. What makes it safe is PKCE plus the redirect list —
-# an authorization code is useless without the verifier that started the
-# exchange, and it can only be delivered back to an origin named here.
-#
-# No direct grant. The console never sees a password, which is the point: it
-# is the surface whose holder can raise the float, so its sign-in should be
-# Keycloak's to harden — SSO, a second factor, a session policy — and none of
-# that is possible if the password is typed into a form we wrote.
-status, p = call("POST", f"/admin/realms/{REALM}/clients", T, body={
-    "clientId": "islapay-console", "enabled": True,
-    "publicClient": True,
-    "standardFlowEnabled": True,
-    "directAccessGrantsEnabled": False,
-    "serviceAccountsEnabled": False,
-    "attributes": {
-        "pkce.code.challenge.method": "S256",
-        # An attribute rather than a field of its own: Keycloak keeps the
-        # sign-out redirects here and rejects the representation outright if
-        # they are sent as a top-level property.
-        "post.logout.redirect.uris": f"{CONSOLE_ORIGIN}/*",
-    },
-    "redirectUris": [f"{CONSOLE_ORIGIN}/*"],
-    "webOrigins": [CONSOLE_ORIGIN],
-    "protocolMappers": [{
-        "name": "islapay-audience", "protocol": "openid-connect",
-        "protocolMapper": "oidc-audience-mapper",
-        "config": {"included.custom.audience": "islapay-api",
-                   "access.token.claim": "true", "id.token.claim": "false"},
-    }],
-})
-must(status, {201}, "crear el cliente de la consola", p)
-
 status, p = call("POST", f"/admin/realms/{REALM}/clients", T, body={
     "clientId": "islapay-admin", "enabled": True,
     "publicClient": False, "secret": ADMIN_SECRET,
@@ -197,11 +155,11 @@ print(f"""
 Realm '{REALM}' listo.
 
   Secreto del cliente de administración: {ADMIN_SECRET}
-  Consola: cliente 'islapay-console', redirección a {CONSOLE_ORIGIN}/*
   Roles: catalog-admin, treasury-admin, p2p-operator
 
-Ninguna cuenta tiene un rol todavía. Para concederlos a alguien que ya se
-registró por la app:
+Ninguna cuenta tiene un rol todavía. La consola de tesorería entra con el
+correo y la contraseña de una cuenta registrada por la app, y sólo muestra algo
+a quien tenga treasury-admin. Para concederlo:
 
   {AUTH}/admin/master/console/#/{REALM}/users
 """)
