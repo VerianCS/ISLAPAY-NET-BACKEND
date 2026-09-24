@@ -1,0 +1,11 @@
+-- Where a seller wants their local money sent.
+--
+-- A sell used to record everything about the money except where it was going:
+-- the operator saw a name and an amount, and had to find the person some other
+-- way before they could pay them. Free text for the same reason a rail's
+-- instructions are: a Transfermóvil card number on one rail, a phone on the
+-- next, read and typed by a human.
+--
+-- Null on buys, where IslaPay is the one being paid, and on sells opened
+-- before this column existed.
+ALTER TABLE p2p.trades ADD COLUMN payout_to text;

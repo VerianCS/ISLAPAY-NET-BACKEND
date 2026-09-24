@@ -454,7 +454,10 @@ public class P2PTests
         IslaPayHost host, Account user, P2PSide side, string amount, string? key = null) =>
         PostAsync(
             host, user, "/v1/p2p/trades",
-            new P2PTradeRequest(side, Money.Parse(amount, TestCurrencies.EIsla), Rail), key);
+            new P2PTradeRequest(
+                side, Money.Parse(amount, TestCurrencies.EIsla), Rail,
+                PayoutTo: side == P2PSide.Sell ? "9205 1299 0000 1234" : null),
+            key);
 
     private static async Task<HttpResponseMessage> PostAsync(
         IslaPayHost host, Account actor, string path, object body, string? key = null)

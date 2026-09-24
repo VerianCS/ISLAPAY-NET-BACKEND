@@ -315,6 +315,12 @@ account and platform accounts may go negative, so nothing in the ledger stops
 IslaPay promising a payout it cannot make. `ILedger.BalanceOfAsync` was added
 for this and it is the only thing that refuses the trade.
 
+**Where a seller is paid** travels with the sale: `payoutTo` on
+`POST /v1/p2p/trades` is required for a sell (a card or phone, up to 64
+characters), stored on the trade, and shown to the seller and in the
+operator's queue. A sell used to record everything about the money except
+where it was going, so the operator had a name and nothing to pay into.
+
 **Where a buyer pays** is the rail's instructions, set with
 `PUT /v1/admin/p2p/methods/{id}/instructions` and shown on every buy next to
 its reference. The column existed from the start with nothing able to write
