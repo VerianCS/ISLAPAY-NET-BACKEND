@@ -240,6 +240,18 @@ public sealed record P2PSettleRequest(string Reference);
 /// </param>
 public sealed record P2PFailRequest(string Reason);
 
+/// <summary><c>PUT /v1/admin/p2p/methods/{id}/instructions</c>.</summary>
+/// <param name="Instructions">
+/// Where a buyer sends the local money: the account or phone, the name on it,
+/// and what to write in the transfer's note. Shown to the buyer as written,
+/// next to the trade's reference. Empty clears it.
+/// </param>
+/// <remarks>
+/// Until this existed the rail's instructions were a column nothing could
+/// write, so every buy told its buyer to pay and not where.
+/// </remarks>
+public sealed record P2PInstructionsUpdate(string Instructions);
+
 /// <summary><c>PUT /v1/admin/p2p/rates</c>.</summary>
 /// <remarks>
 /// Never an update in place. Each call appends a row with an effective time,

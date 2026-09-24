@@ -504,6 +504,38 @@ public sealed class P2PService
         _db.ChangeTracker.Clear();
     }
 
+    /// <summary>The longest instructions a rail may carry.</summary>
+    public const int MaximumInstructionsLength = 1000;
+
+    /// <summary>
+    /// Sets what a buyer is told about where to send the local money.
+    /// </summary>
+    /// <remarks>
+    /// Read at the moment a buy is shown, not copied onto the trade: if the
+    /// desk changes account, a buyer who has not paid yet should see the new
+    /// one rather than the one that was current when they pressed the button.
+    /// </remarks>
+    public async Task SetInstructionsAsync(
+        string methodId, string instructions, CancellationToken cancellationToken = default)
+    {
+        var text = (instructions ?? string.Empty).Trim();
+        if (text.Length > MaximumInstructionsLength)
+        {
+            throw new P2PException(
+                P2PErrors.InvalidInstructions, 422,
+                $"Instructions are limited to {MaximumInstructionsLength} characters.");
+        }
+
+        var method = await _db.Methods
+            .FirstOrDefaultAsync(m => m.Id == methodId, cancellationToken).ConfigureAwait(false)
+            ?? throw new P2PException(P2PErrors.MethodNotFound, 404, "No such rail.");
+
+        method.Instructions = text;
+        method.UpdatedAt = _clock.GetUtcNow();
+        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        _db.ChangeTracker.Clear();
+    }
+
     // -------------------------------------------------------------- the repair
 
     /// <summary>

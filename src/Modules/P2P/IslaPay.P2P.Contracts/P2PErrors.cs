@@ -73,6 +73,9 @@ public static class P2PErrors
     /// </summary>
     public const string WrongSide = "wrong_side";
 
+    /// <summary>A rail's payment instructions are longer than a person reads.</summary>
+    public const string InvalidInstructions = "invalid_instructions";
+
     /// <summary>
     /// This module's codes whose <c>meta</c> must carry a <c>currency</c>,
     /// because the client's corresponding type cannot be constructed without
