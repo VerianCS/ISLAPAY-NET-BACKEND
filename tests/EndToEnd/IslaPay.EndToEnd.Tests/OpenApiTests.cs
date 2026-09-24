@@ -205,4 +205,49 @@ public class OpenApiTests
         Assert.Equal("http", bearer.GetProperty("type").GetString());
         Assert.Equal("bearer", bearer.GetProperty("scheme").GetString());
     }
+
+    [SkippableFact]
+    public async Task A_protected_route_says_it_needs_the_token_and_login_does_not()
+    {
+        Skip.IfNot(_fixture.Available, "No Keycloak or no Postgres reachable.");
+
+        await using var host = _fixture.Build();
+        using var client = host.CreateClient();
+
+        using var document = JsonDocument.Parse(await client.GetStringAsync(
+            new Uri("/openapi/v1.json", UriKind.Relative)));
+        var paths = document.RootElement.GetProperty("paths");
+
+        // Without this, Swagger UI's "Authorize" keeps a token and sends it
+        // nowhere, and every protected call from the page answers 401.
+        static bool NeedsBearer(JsonElement operation) =>
+            operation.TryGetProperty("security", out var security)
+            && security.EnumerateArray().Any(r => r.TryGetProperty("bearer", out _));
+
+        Assert.True(NeedsBearer(paths.GetProperty("/v1/me/wallet").GetProperty("get")));
+        Assert.True(NeedsBearer(
+            paths.GetProperty("/v1/admin/treasury/balances").GetProperty("get")));
+
+        // And the one a person calls to get a token must not ask for one.
+        Assert.False(NeedsBearer(paths.GetProperty("/v1/auth/login").GetProperty("post")));
+    }
+
+    [SkippableFact]
+    public async Task Swagger_UI_is_served_over_the_same_document()
+    {
+        Skip.IfNot(_fixture.Available, "No Keycloak or no Postgres reachable.");
+
+        await using var host = _fixture.Build();
+        using var client = host.CreateClient();
+
+        var page = await client.GetAsync(new Uri("/swagger/index.html", UriKind.Relative));
+        Assert.True(page.IsSuccessStatusCode, $"{(int)page.StatusCode}");
+        Assert.Equal("text/html", page.Content.Headers.ContentType?.MediaType);
+
+        // The page reads its configuration from here; pointing it at a
+        // document of its own would show something a client is not promised.
+        var config = await client.GetStringAsync(
+            new Uri("/swagger/index.js", UriKind.Relative));
+        Assert.Contains("/openapi/v1.json", config, StringComparison.Ordinal);
+    }
 }

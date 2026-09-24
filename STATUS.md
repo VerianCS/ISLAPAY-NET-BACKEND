@@ -446,6 +446,14 @@ a token, so this is not a secret, but a complete map of the admin surface
 handed to anonymous callers is a convenience for an attacker and for nobody
 else. `OpenApi:Enabled` turns it on where a build machine needs it.
 
+**Swagger UI** at `/swagger`, on exactly when the document is. It is only the
+UI (`Swashbuckle.AspNetCore.SwaggerUI`) over that same document, so the page
+shows what a client is promised and nothing else. To call a protected route:
+run `POST /v1/auth/login` from the page, copy `accessToken`, paste it into
+**Authorize**. Every route that needs the token says so in the document (41 of
+47 today), read from the same authorization metadata the host enforces, so the
+padlocks cannot disagree with the 401s. `OpenApi:UiRoute` moves the page.
+
 It exists because the admin console is a separate repository that will never
 link against these assemblies: either it generates its client from this
 document or somebody transcribes the shapes from a response, and a

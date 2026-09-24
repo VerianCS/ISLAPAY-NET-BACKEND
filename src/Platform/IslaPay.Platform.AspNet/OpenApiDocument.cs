@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.OpenApi;
 using Microsoft.Extensions.Configuration;
@@ -27,6 +28,14 @@ public sealed class OpenApiOptions
     /// default, which is where every .NET generator looks first.
     /// </summary>
     public string Route { get; init; } = "/openapi/{documentName}.json";
+
+    /// <summary>
+    /// Where Swagger UI is served, relative to the root: <c>/swagger</c> by
+    /// default. It reads the document above and is on exactly when the
+    /// document is — a page describing an API that is not published would be
+    /// an empty page.
+    /// </summary>
+    public string UiRoute { get; init; } = "swagger";
 }
 
 /// <summary>
@@ -91,6 +100,34 @@ public static class OpenApiDocument
                         "An access token from POST /v1/auth/login. Admin routes additionally "
                         + "require a realm role: catalog-admin, treasury-admin or p2p-operator.",
                 };
+
+                return Task.CompletedTask;
+            });
+
+            // Which operations need the token, said on each of them.
+            //
+            // The scheme above only says what a token looks like; without a
+            // requirement on the operation, nothing says *where* it is needed,
+            // and Swagger UI's "Authorize" then stores a token and sends it
+            // nowhere. Read from the same metadata the authorization
+            // middleware reads, so the document cannot claim a route is open
+            // that the host would refuse, or the other way round.
+            options.AddOperationTransformer((operation, context, cancellationToken) =>
+            {
+                var metadata = context.Description.ActionDescriptor.EndpointMetadata;
+                var anonymous = metadata.OfType<IAllowAnonymous>().Any();
+                var authorized = metadata.OfType<IAuthorizeData>().Any();
+
+                if (authorized && !anonymous)
+                {
+                    operation.Security =
+                    [
+                        new OpenApiSecurityRequirement
+                        {
+                            [new OpenApiSecuritySchemeReference("bearer", context.Document)] = [],
+                        },
+                    ];
+                }
 
                 return Task.CompletedTask;
             });
@@ -275,6 +312,35 @@ public static class OpenApiDocument
         if (options.Enabled ?? app.Environment.IsDevelopment())
         {
             app.MapOpenApi(options.Route);
+            MapSwaggerUi(app, options);
         }
+    }
+
+    /// <summary>
+    /// Swagger UI over the document: the API, browsable and callable from a
+    /// browser, for whoever is developing against it.
+    /// </summary>
+    /// <remarks>
+    /// Only the UI, not Swashbuckle's generator: the document stays the one
+    /// <c>Microsoft.AspNetCore.OpenApi</c> builds and the console generates
+    /// its client from, so the page shows exactly what a client is promised.
+    /// To call a protected route, run <c>POST /v1/auth/login</c> from the page,
+    /// copy the access token, and paste it into "Authorize"; the page keeps it
+    /// across reloads.
+    /// </remarks>
+    private static void MapSwaggerUi(WebApplication app, OpenApiOptions options)
+    {
+        var document = "/" + options.Route.TrimStart('/')
+            .Replace("{documentName}", DocumentName, StringComparison.Ordinal);
+
+        app.UseSwaggerUI(ui =>
+        {
+            ui.RoutePrefix = options.UiRoute.Trim('/');
+            ui.DocumentTitle = "IslaPay API";
+            ui.SwaggerEndpoint(document, "IslaPay v1");
+            ui.EnablePersistAuthorization();
+            ui.EnableTryItOutByDefault();
+            ui.DisplayRequestDuration();
+        });
     }
 }
