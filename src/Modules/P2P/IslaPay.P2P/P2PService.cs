@@ -322,7 +322,9 @@ public sealed class P2PService
                 P2PErrors.TradeNotOpen, 409, "This trade is no longer waiting on anything.");
         }
 
-        await RefundAsync(trade, "Called off by the customer.", operatorId: null, cancellationToken)
+        // Stored as the failure reason and shown to the user as written, like
+        // an operator's; so in their language, not a log line's.
+        await RefundAsync(trade, "Cancelaste la venta antes de que se enviaran los pesos.", operatorId: null, cancellationToken)
             .ConfigureAwait(false);
 
         return await ProjectAsync(trade, cancellationToken).ConfigureAwait(false);
