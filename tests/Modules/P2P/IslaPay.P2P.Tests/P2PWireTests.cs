@@ -36,13 +36,17 @@ public class P2PWireTests
     }
 
     [Fact]
-    public void A_method_carries_both_sides_of_the_spread()
+    public void A_method_carries_both_sides_of_the_spread_per_wallet_currency()
     {
         var method = new P2PMethodDto(
-            "cup_tm", "CUP Transfermóvil", "CUP",
-            SellRate: "380", BuyRate: "390", Available: true,
-            Minimum: Money.Parse("5.00", TestCurrencies.EIsla),
-            Maximum: Money.Parse("500.00", TestCurrencies.EIsla));
+            "cup", "CUP", "CUP", Available: true,
+            Minimum: Money.Parse("500.00", TestCurrencies.Cup),
+            Maximum: Money.Parse("60000.00", TestCurrencies.Cup),
+            Rates:
+            [
+                new P2PMethodRateDto("EISLA", SellRate: "380", BuyRate: "390"),
+                new P2PMethodRateDto("USDT", SellRate: null, BuyRate: "395"),
+            ]);
 
         var json = JsonSerializer.Serialize(method, Json);
 
@@ -51,6 +55,9 @@ public class P2PWireTests
         Assert.Contains("\"sellRate\":\"380\"", json, StringComparison.Ordinal);
         Assert.Contains("\"buyRate\":\"390\"", json, StringComparison.Ordinal);
         Assert.Contains("\"available\":true", json, StringComparison.Ordinal);
+        // A side that is not offered is absent, not a "0" a client could price with.
+        Assert.Contains("{\"currency\":\"USDT\",\"buyRate\":\"395\"}", json, StringComparison.Ordinal);
+        Assert.Contains("\"minimum\":{\"amount\":\"500.00\",\"currency\":\"CUP\"}", json, StringComparison.Ordinal);
     }
 
     [Fact]

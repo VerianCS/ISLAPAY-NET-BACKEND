@@ -48,7 +48,10 @@ public sealed class P2PFixture : PostgresFixture
         await db.Database.ExecuteSqlRawAsync(
             """
             TRUNCATE p2p.trades, p2p.rates RESTART IDENTITY;
-            UPDATE p2p.methods SET available = false;
+            DELETE FROM p2p.methods WHERE id <> 'cup';
+            UPDATE p2p.methods
+               SET available = false, name = 'CUP', instructions = '',
+                   minimum_minor = 50000, maximum_minor = 6000000;
             """);
     }
 

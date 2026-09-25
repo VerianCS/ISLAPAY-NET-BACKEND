@@ -19,7 +19,7 @@ namespace IslaPay.P2P.Tests;
 [Collection(P2PDefinition.Name)]
 public sealed class TradeLifecycleTests : IAsyncLifetime
 {
-    private const string Rail = "cup_transfermovil";
+    private const string Rail = "cup";
     private const string Card = "9205 1299 0000 1234";
 
     private readonly P2PFixture _fixture;
@@ -411,15 +411,19 @@ public sealed class TradeLifecycleTests : IAsyncLifetime
     {
         var w = await SetUpAsync();
 
+        // The limits are in pesos, the leg the desk moves: 500 to 60,000 CUP.
+        // One E-ISLA sold at 120 is 118.80 CUP after the fee.
         var tooSmall = await Assert.ThrowsAsync<P2PException>(
             () => w.Service.OpenAsync(w.User, new P2PTradeRequest(P2PSide.Sell, EIsla("1.00"), Rail, PayoutTo: Card)));
         Assert.Equal(P2PErrors.BelowMinimum, tooSmall.Code);
-        Assert.Equal("5.00", tooSmall.Facts["minimum"]);
+        Assert.Equal("500.00", tooSmall.Facts["minimum"]);
+        Assert.Equal("CUP", tooSmall.Facts["currency"]);
 
         var tooBig = await Assert.ThrowsAsync<P2PException>(
             () => w.Service.OpenAsync(w.User, new P2PTradeRequest(P2PSide.Sell, EIsla("9000.00"), Rail, PayoutTo: Card)));
         Assert.Equal(P2PErrors.AboveMaximum, tooBig.Code);
-        Assert.Equal("500.00", tooBig.Facts["maximum"]);
+        Assert.Equal("60000.00", tooBig.Facts["maximum"]);
+        Assert.Equal("CUP", tooBig.Facts["currency"]);
     }
 
     [SkippableFact]
@@ -437,5 +441,154 @@ public sealed class TradeLifecycleTests : IAsyncLifetime
         Assert.Equal("Ana", item.UserName);
         Assert.Equal(sell.Reference, item.Reference);
         Assert.Equal(TimeSpan.FromMinutes(20), item.Waiting);
+    }
+
+    // ------------------------------------------------------- the rail model
+
+    private static Money Usdt(string amount) => Money.Parse(amount, TestCurrencies.Usdt);
+
+    [SkippableFact]
+    public async Task Each_wallet_currency_has_its_own_prices_on_the_one_peso_rail()
+    {
+        var w = await SetUpAsync();
+        w.Ledger.Fund(AccountRef.SettlementFund(TestCurrencies.Usdt), Usdt("1000.000000"));
+
+        // IslaPay sells USDT for pesos but does not buy it: one side only.
+        await w.Service.SetRateAsync("op", new P2PRateUpdate(Rail, P2PSide.Buy, "USDT", "130"));
+
+        var method = Assert.Single(await w.Service.MethodsAsync());
+        Assert.Equal("CUP", method.Code);
+        Assert.Equal(Cup("500.00"), method.Minimum);
+        Assert.Equal(Cup("60000.00"), method.Maximum);
+        Assert.Collection(
+            method.Rates,
+            eisla =>
+            {
+                Assert.Equal(new P2PMethodRateDto("EISLA", "120", "125"), eisla);
+            },
+            usdt =>
+            {
+                Assert.Equal(new P2PMethodRateDto("USDT", null, "130"), usdt);
+            });
+
+        var buy = await w.Service.QuoteAsync(new P2PQuoteRequest(P2PSide.Buy, Usdt("10.000000"), Rail));
+        Assert.True(buy.Executable);
+        Assert.Equal(Cup("1300.00"), buy.Local);
+
+        var sell = await w.Service.QuoteAsync(new P2PQuoteRequest(P2PSide.Sell, Usdt("10.000000"), Rail));
+        Assert.False(sell.Executable);
+        Assert.Equal(P2PErrors.RateUnavailable, sell.Reason);
+    }
+
+    [SkippableFact]
+    public async Task Withdrawing_a_side_stops_it_without_erasing_it()
+    {
+        var w = await SetUpAsync();
+
+        await w.Service.SetRateAsync("op", new P2PRateUpdate(Rail, P2PSide.Sell, "EISLA", null));
+
+        var rates = Assert.Single(Assert.Single(await w.Service.MethodsAsync()).Rates);
+        Assert.Null(rates.SellRate);
+        Assert.Equal("125", rates.BuyRate);
+
+        var refused = await Assert.ThrowsAsync<P2PException>(
+            () => w.Service.OpenAsync(w.User, new P2PTradeRequest(P2PSide.Sell, EIsla("100.00"), Rail, PayoutTo: Card)));
+        Assert.Equal(P2PErrors.RateUnavailable, refused.Code);
+
+        // Published again, it trades again.
+        await w.Service.SetRateAsync("op", new P2PRateUpdate(Rail, P2PSide.Sell, "EISLA", "118"));
+        var quote = await w.Service.QuoteAsync(new P2PQuoteRequest(P2PSide.Sell, EIsla("100.00"), Rail));
+        Assert.True(quote.Executable);
+        Assert.Equal("118", quote.Rate);
+    }
+
+    [SkippableFact]
+    public async Task Pesos_are_never_the_wallet_side()
+    {
+        var w = await SetUpAsync();
+
+        var quote = await Assert.ThrowsAsync<P2PException>(
+            () => w.Service.QuoteAsync(new P2PQuoteRequest(P2PSide.Sell, Cup("1000.00"), Rail)));
+        Assert.Equal(P2PErrors.InvalidAmount, quote.Code);
+
+        var rate = await Assert.ThrowsAsync<P2PException>(
+            () => w.Service.SetRateAsync("op", new P2PRateUpdate(Rail, P2PSide.Sell, "CUP", "1")));
+        Assert.Equal(P2PErrors.InvalidCurrency, rate.Code);
+    }
+
+    [SkippableFact]
+    public async Task A_rail_is_opened_only_for_a_switched_on_local_currency_without_one()
+    {
+        var w = await SetUpAsync();
+
+        // Listed in the catalogue but switched off there.
+        var off = await Assert.ThrowsAsync<P2PException>(
+            () => w.Service.CreateMethodAsync(new P2PMethodCreate(
+                "USD", Money.Parse("10.00", Currency.Of("USD", 2)), Money.Parse("500.00", Currency.Of("USD", 2)))));
+        Assert.Equal(P2PErrors.InvalidCurrency, off.Code);
+
+        // A wallet currency is not local money.
+        var wallet = await Assert.ThrowsAsync<P2PException>(
+            () => w.Service.CreateMethodAsync(new P2PMethodCreate("EISLA", EIsla("1.00"), EIsla("10.00"))));
+        Assert.Equal(P2PErrors.InvalidCurrency, wallet.Code);
+
+        // One peso: a second CUP rail is the thing this model rules out.
+        var twice = await Assert.ThrowsAsync<P2PException>(
+            () => w.Service.CreateMethodAsync(new P2PMethodCreate("cup", Cup("100.00"), Cup("1000.00"), "CUP EnZona")));
+        Assert.Equal(P2PErrors.MethodExists, twice.Code);
+    }
+
+    [SkippableFact]
+    public async Task The_desk_moves_limits_in_pesos_and_they_apply_at_once()
+    {
+        var w = await SetUpAsync();
+
+        var inverted = await Assert.ThrowsAsync<P2PException>(
+            () => w.Service.UpdateMethodAsync(Rail, new P2PMethodUpdate(Minimum: Cup("2000.00"), Maximum: Cup("1000.00"))));
+        Assert.Equal(P2PErrors.InvalidLimits, inverted.Code);
+
+        var wrongUnit = await Assert.ThrowsAsync<P2PException>(
+            () => w.Service.UpdateMethodAsync(Rail, new P2PMethodUpdate(Maximum: EIsla("100.00"))));
+        Assert.Equal(P2PErrors.InvalidLimits, wrongUnit.Code);
+
+        var updated = await w.Service.UpdateMethodAsync(
+            Rail, new P2PMethodUpdate(Name: "Peso cubano", Maximum: Cup("10000.00")));
+        Assert.Equal("Peso cubano", updated.Name);
+        Assert.Equal(Cup("500.00"), updated.Minimum);
+        Assert.Equal(Cup("10000.00"), updated.Maximum);
+
+        // 100 E-ISLA sold at 120 is 11,880 pesos: fine a moment ago, over now.
+        var refused = await Assert.ThrowsAsync<P2PException>(
+            () => w.Service.QuoteAsync(new P2PQuoteRequest(P2PSide.Sell, EIsla("100.00"), Rail)));
+        Assert.Equal(P2PErrors.AboveMaximum, refused.Code);
+        Assert.Equal("10000.00", refused.Facts["maximum"]);
+    }
+
+    [SkippableFact]
+    public async Task A_late_paid_expired_buy_can_be_found_by_its_reference()
+    {
+        var w = await SetUpAsync();
+        var trade = await w.Service.OpenAsync(
+            w.User, new P2PTradeRequest(P2PSide.Buy, EIsla("20.00"), Rail));
+
+        w.Clock.Advance(w.Options.PaymentWindow + TimeSpan.FromMinutes(1));
+        await w.Service.RepairAsync();
+
+        // Gone from the queue, which only shows what is still expected.
+        Assert.Empty(await w.Service.QueueAsync(limit: 50));
+
+        // The operator has the reference as the bank printed it.
+        var typed = trade.Reference.Replace("-", string.Empty, StringComparison.Ordinal).ToLowerInvariant();
+        var found = Assert.Single(await w.Service.SearchTradesAsync(typed, status: null, limit: 50));
+        Assert.Equal(trade.Id, found.Id);
+        Assert.Equal(P2PTradeStatuses.Expired, found.Status);
+        Assert.Equal(trade.ExpiresAt, found.ExpiresAt);
+
+        var expired = Assert.Single(await w.Service.SearchTradesAsync(null, P2PTradeStatuses.Expired, limit: 50));
+        Assert.Equal(trade.Id, expired.Id);
+
+        var nonsense = await Assert.ThrowsAsync<P2PException>(
+            () => w.Service.SearchTradesAsync(null, "lost", limit: 50));
+        Assert.Equal(P2PErrors.InvalidAmount, nonsense.Code);
     }
 }

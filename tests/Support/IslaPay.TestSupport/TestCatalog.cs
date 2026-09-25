@@ -36,6 +36,9 @@ public sealed class TestCatalog : ICurrencyCatalog
         new("USDT", "Tether", 6, CurrencyKinds.Stablecoin, "₮", true, true, 20),
         new("USDC", "USD Coin", 6, CurrencyKinds.Stablecoin, "$", true, true, 30),
         new("CUP", "Peso cubano", 2, CurrencyKinds.Fiat, "$", false, true, 40),
+        // Listed and switched off, as seeded: the shape of every local
+        // currency a P2P rail could be opened for once the catalogue enables it.
+        new("USD", "Dólar estadounidense", 2, CurrencyKinds.Fiat, "$", false, false, 100),
     ];
 
     /// <summary>The chains, and which of them this build watches.</summary>

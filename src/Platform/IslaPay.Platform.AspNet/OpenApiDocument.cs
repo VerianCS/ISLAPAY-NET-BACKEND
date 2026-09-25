@@ -178,7 +178,12 @@ public static class OpenApiDocument
             // the converter refuses, and would refuse the shape it is sent.
             options.AddSchemaTransformer((schema, context, cancellationToken) =>
             {
-                if (context.JsonTypeInfo.Type != typeof(Money)) return Task.CompletedTask;
+                // Optional too: a partial update leaves out what it does not
+                // change, and an untyped `Money?` would reach a client as
+                // `unknown`, the same trap as the timestamps above.
+                var type = Nullable.GetUnderlyingType(context.JsonTypeInfo.Type)
+                    ?? context.JsonTypeInfo.Type;
+                if (type != typeof(Money)) return Task.CompletedTask;
 
                 schema.Type = JsonSchemaType.Object;
                 schema.Properties = new Dictionary<string, IOpenApiSchema>(StringComparer.Ordinal)

@@ -85,7 +85,7 @@ public sealed class P2PService
 
     // ---------------------------------------------------------------- reading
 
-    /// <summary>The rails, with both sides of each spread.</summary>
+    /// <summary>The rails, with both sides of each spread per wallet currency.</summary>
     public async Task<IReadOnlyList<P2PMethodDto>> MethodsAsync(
         CancellationToken cancellationToken = default)
     {
@@ -93,29 +93,39 @@ public sealed class P2PService
             .OrderBy(m => m.Name)
             .ToListAsync(cancellationToken).ConfigureAwait(false);
 
-        var dtos = new List<P2PMethodDto>(methods.Count);
-        foreach (var method in methods)
-        {
-            var sell = await CurrentRateAsync(method, P2PSide.Sell, cancellationToken)
-                .ConfigureAwait(false);
-            var buy = await CurrentRateAsync(method, P2PSide.Buy, cancellationToken)
-                .ConfigureAwait(false);
+        var rates = await RatesByMethodAsync(cancellationToken).ConfigureAwait(false);
 
-            dtos.Add(new P2PMethodDto(
-                Id: method.Id,
-                Name: method.Name,
-                Code: method.LocalCurrencyCode,
-                SellRate: Format(sell) ?? "0",
-                BuyRate: Format(buy) ?? "0",
-                // A rail with no published rate cannot be traded however its
-                // switch is set. Saying so here keeps the client from offering
-                // a price that does not exist.
-                Available: method.Available && sell is not null && buy is not null,
-                Minimum: method.Minimum,
-                Maximum: method.Maximum));
-        }
+        return
+        [
+            .. methods.Select(method =>
+            {
+                var offered = rates.GetValueOrDefault(method.Id) ?? [];
+                return new P2PMethodDto(
+                    Id: method.Id,
+                    Name: method.Name,
+                    Code: method.LocalCurrencyCode,
+                    // A rail with no published price cannot be traded however
+                    // its switch is set. Saying so here keeps the client from
+                    // offering a price that does not exist.
+                    Available: method.Available && offered.Count > 0,
+                    Minimum: method.Minimum,
+                    Maximum: method.Maximum,
+                    Rates: offered);
+            }),
+        ];
+    }
 
-        return dtos;
+    /// <summary>The rails as the desk edits them, switched off ones included.</summary>
+    public async Task<IReadOnlyList<P2PAdminMethodDto>> AdminMethodsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var methods = await _db.Methods.AsNoTracking()
+            .OrderBy(m => m.Name)
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
+
+        var rates = await RatesByMethodAsync(cancellationToken).ConfigureAwait(false);
+
+        return [.. methods.Select(m => AdminView(m, rates.GetValueOrDefault(m.Id) ?? []))];
     }
 
     /// <summary>What a trade would look like if it were placed now.</summary>
@@ -132,9 +142,10 @@ public sealed class P2PService
         var method = await RequireMethodAsync(request.MethodId, cancellationToken)
             .ConfigureAwait(false);
 
-        RequireTradeableAmount(method, request.Amount);
+        RequireTradeableAmount(request.Amount);
 
-        var rate = await CurrentRateAsync(method, request.Side, cancellationToken)
+        var rate = await CurrentRateAsync(
+                method, request.Side, request.Amount.Currency.Code, cancellationToken)
             .ConfigureAwait(false);
 
         if (rate is null)
@@ -143,6 +154,8 @@ public sealed class P2PService
         }
 
         var priced = Price(method, request.Side, request.Amount, rate.Value);
+
+        RequireWithinLimits(method, priced.Local);
 
         if (!method.Available)
         {
@@ -242,12 +255,14 @@ public sealed class P2PService
                 P2PErrors.MethodUnavailable, 409, "That rail is not trading right now.");
         }
 
-        RequireTradeableAmount(method, request.Amount);
+        RequireTradeableAmount(request.Amount);
 
-        var rate = await CurrentRateAsync(method, request.Side, cancellationToken)
+        var rate = await CurrentRateAsync(
+                method, request.Side, request.Amount.Currency.Code, cancellationToken)
             .ConfigureAwait(false)
             ?? throw new P2PException(
-                P2PErrors.RateUnavailable, 409, "That rail has no published rate.");
+                P2PErrors.RateUnavailable, 409,
+                $"That rail has no published {Wire(request.Side)} rate for {request.Amount.Currency.Code}.");
 
         RequireQuoteStillHolds(request.QuotedRate, rate);
 
@@ -259,6 +274,8 @@ public sealed class P2PService
                 P2PErrors.InvalidAmount, 422,
                 "That amount converts to nothing at the current rate.");
         }
+
+        RequireWithinLimits(method, priced.Local);
 
         if (await FundShortfallAsync(method, request.Side, priced, cancellationToken)
             .ConfigureAwait(false) is { } short_)
@@ -346,23 +363,7 @@ public sealed class P2PService
             .Take(Math.Clamp(limit, 1, 200))
             .ToListAsync(cancellationToken).ConfigureAwait(false);
 
-        return
-        [
-            .. rows.Select(t => new P2PQueueItemDto(
-                Id: t.Id.ToString("D", CultureInfo.InvariantCulture),
-                Side: ParseSide(t.Side),
-                MethodId: t.MethodId,
-                MethodName: t.MethodName,
-                UserId: t.UserId,
-                UserName: t.UserName,
-                Amount: t.Amount,
-                Local: t.Local,
-                Status: t.Status,
-                Reference: t.Reference,
-                CreatedAt: t.CreatedAt,
-                Waiting: now - t.CreatedAt,
-                PayoutTo: t.PayoutTo))
-        ];
+        return [.. rows.Select(t => OperatorView(t, now))];
     }
 
     /// <summary>The operator sent a seller their local money.</summary>
@@ -459,12 +460,19 @@ public sealed class P2PService
         var method = await RequireMethodAsync(update.MethodId, cancellationToken)
             .ConfigureAwait(false);
 
-        if (!decimal.TryParse(
-                update.Rate, NumberStyles.Number, CultureInfo.InvariantCulture, out var rate)
-            || rate <= 0)
+        // Empty withdraws the side. Anything else has to be a price.
+        decimal? rate = null;
+        if (!string.IsNullOrWhiteSpace(update.Rate))
         {
-            throw new P2PException(
-                P2PErrors.RateUnavailable, 422, "A rate must be a positive decimal.");
+            if (!decimal.TryParse(
+                    update.Rate, NumberStyles.Number, CultureInfo.InvariantCulture, out var parsed)
+                || parsed <= 0)
+            {
+                throw new P2PException(
+                    P2PErrors.RateUnavailable, 422, "A rate must be a positive decimal.");
+            }
+
+            rate = parsed;
         }
 
         // The operator names a currency and the catalogue says what it is.
@@ -477,7 +485,14 @@ public sealed class P2PService
         }
         catch (UnknownCurrencyException e)
         {
-            throw new P2PException(P2PErrors.RateUnavailable, 422, e.Message);
+            throw new P2PException(P2PErrors.InvalidCurrency, 422, e.Message);
+        }
+
+        if (!IsHoldable(wallet.Code))
+        {
+            throw new P2PException(
+                P2PErrors.InvalidCurrency, 422,
+                $"{wallet.Code} is not held in wallets, so it cannot be priced against {method.LocalCurrencyCode}.");
         }
 
         _db.Rates.Add(new TradeRate
@@ -493,6 +508,144 @@ public sealed class P2PService
 
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         _db.ChangeTracker.Clear();
+    }
+
+    /// <summary>The longest name a rail may carry; it sits on one line of a phone.</summary>
+    public const int MaximumMethodNameLength = 40;
+
+    /// <summary>Opens a rail for a local currency, switched off and unpriced.</summary>
+    /// <remarks>
+    /// Starting off is the point: a rail that went live on creation would
+    /// quote the moment the form was submitted, before anybody had set a
+    /// price or said where buyers pay.
+    /// </remarks>
+    public async Task<P2PAdminMethodDto> CreateMethodAsync(
+        P2PMethodCreate create, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(create);
+
+        var local = RequireLocalCurrency(create.Currency);
+        var (minimum, maximum) = RequireLimits(local, create.Minimum, create.Maximum);
+        var name = RequireMethodName(create.Name ?? local.Code);
+        var instructions = RequireInstructions(create.Instructions ?? string.Empty);
+        var id = local.Code.ToLowerInvariant();
+
+        if (await _db.Methods.AnyAsync(
+                m => m.Id == id || m.LocalCurrencyCode == local.Code, cancellationToken)
+            .ConfigureAwait(false))
+        {
+            throw new P2PException(
+                P2PErrors.MethodExists, 409, $"There is already a rail for {local.Code}.");
+        }
+
+        var method = new TradeMethod
+        {
+            Id = id,
+            Name = name,
+            LocalCurrencyCode = local.Code,
+            LocalScale = local.Scale,
+            Available = false,
+            Instructions = instructions,
+            MinimumMinor = minimum.MinorUnits,
+            MaximumMinor = maximum.MinorUnits,
+            UpdatedAt = _clock.GetUtcNow(),
+        };
+        _db.Methods.Add(method);
+
+        try
+        {
+            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (DbUpdateException e) when (IsUniqueViolation(e))
+        {
+            // Two operators creating the same rail at once: the second is told
+            // what the first already did.
+            throw new P2PException(
+                P2PErrors.MethodExists, 409, $"There is already a rail for {local.Code}.");
+        }
+        finally
+        {
+            _db.ChangeTracker.Clear();
+        }
+
+        return AdminView(method, []);
+    }
+
+    /// <summary>Renames a rail or moves its limits. Leaves out what is not sent.</summary>
+    public async Task<P2PAdminMethodDto> UpdateMethodAsync(
+        string methodId, P2PMethodUpdate update, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(update);
+
+        var method = await _db.Methods
+            .FirstOrDefaultAsync(m => m.Id == methodId, cancellationToken).ConfigureAwait(false)
+            ?? throw new P2PException(P2PErrors.MethodNotFound, 404, "No such rail.");
+
+        if (update.Name is not null)
+        {
+            method.Name = RequireMethodName(update.Name);
+        }
+
+        if (update.Minimum is not null || update.Maximum is not null)
+        {
+            var (minimum, maximum) = RequireLimits(
+                method.LocalCurrency,
+                update.Minimum ?? method.Minimum,
+                update.Maximum ?? method.Maximum);
+            method.MinimumMinor = minimum.MinorUnits;
+            method.MaximumMinor = maximum.MinorUnits;
+        }
+
+        method.UpdatedAt = _clock.GetUtcNow();
+        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        _db.ChangeTracker.Clear();
+
+        var rates = await RatesByMethodAsync(cancellationToken).ConfigureAwait(false);
+        return AdminView(method, rates.GetValueOrDefault(method.Id) ?? []);
+    }
+
+    /// <summary>
+    /// Finds trades by reference or status, newest first.
+    /// </summary>
+    /// <remarks>
+    /// The queue only shows what is waiting, so a buy that expired and was
+    /// then paid late — which <see cref="ConfirmReceiptAsync"/> still accepts
+    /// — has nowhere to be found without this. The reference is what a buyer
+    /// writes on the transfer, and what the operator has in hand.
+    /// </remarks>
+    public async Task<IReadOnlyList<P2PQueueItemDto>> SearchTradesAsync(
+        string? reference, string? status, int limit, CancellationToken cancellationToken = default)
+    {
+        var query = _db.Trades.AsNoTracking();
+
+        if (!string.IsNullOrWhiteSpace(reference))
+        {
+            // As the operator has it: from a bank note, maybe without the
+            // dash and in whatever case the banking app printed it.
+            var wanted = new string([.. reference.Where(char.IsLetterOrDigit)]).ToUpperInvariant();
+            if (wanted.Length == 8) wanted = $"{wanted[..4]}-{wanted[4..]}";
+            query = query.Where(t => t.Reference == wanted);
+        }
+
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            var wanted = status.Trim();
+            if (!P2PTradeStatuses.All.Contains(wanted))
+            {
+                throw new P2PException(
+                    P2PErrors.InvalidAmount, 422, $"'{wanted}' is not a trade status.");
+            }
+
+            query = query.Where(t => t.Status == wanted);
+        }
+
+        var rows = await query
+            .OrderByDescending(t => t.Seq)
+            .Take(Math.Clamp(limit, 1, 200))
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
+
+        var now = _clock.GetUtcNow();
+        return [.. rows.Select(t => OperatorView(t, now))];
     }
 
     /// <summary>Switches a rail on or off.</summary>
@@ -523,13 +676,7 @@ public sealed class P2PService
     public async Task SetInstructionsAsync(
         string methodId, string instructions, CancellationToken cancellationToken = default)
     {
-        var text = (instructions ?? string.Empty).Trim();
-        if (text.Length > MaximumInstructionsLength)
-        {
-            throw new P2PException(
-                P2PErrors.InvalidInstructions, 422,
-                $"Instructions are limited to {MaximumInstructionsLength} characters.");
-        }
+        var text = RequireInstructions(instructions);
 
         var method = await _db.Methods
             .FirstOrDefaultAsync(m => m.Id == methodId, cancellationToken).ConfigureAwait(false)
@@ -1186,22 +1333,67 @@ public sealed class P2PService
     }
 
     private async Task<decimal?> CurrentRateAsync(
-        TradeMethod method, P2PSide side, CancellationToken cancellationToken)
+        TradeMethod method, P2PSide side, string walletCurrency, CancellationToken cancellationToken)
     {
         var wire = Wire(side);
         var now = _clock.GetUtcNow();
 
-        var rate = await _db.Rates.AsNoTracking()
+        // The newest row decides, and a withdrawn side's newest row has no
+        // rate: that reads as "not offered", not as the price before it.
+        var latest = await _db.Rates.AsNoTracking()
             .Where(r => r.MethodId == method.Id
                      && r.Side == wire
-                     && r.WalletCurrencyCode == method.WalletCurrencyCode
+                     && r.WalletCurrencyCode == walletCurrency
                      && r.EffectiveFrom <= now)
             .OrderByDescending(r => r.EffectiveFrom)
             .ThenByDescending(r => r.Id)
-            .Select(r => (decimal?)r.Rate)
+            .Select(r => new { r.Rate })
             .FirstOrDefaultAsync(cancellationToken).ConfigureAwait(false);
 
-        return rate;
+        return latest?.Rate;
+    }
+
+    /// <summary>
+    /// Every rail's current prices, keyed by rail, holdable currencies only,
+    /// in the catalogue's order.
+    /// </summary>
+    /// <remarks>
+    /// One read of the rates table rather than one per rail, side and
+    /// currency. Rates are set by hand, so the table stays small enough to
+    /// fold in memory.
+    /// </remarks>
+    private async Task<Dictionary<string, IReadOnlyList<P2PMethodRateDto>>> RatesByMethodAsync(
+        CancellationToken cancellationToken)
+    {
+        var now = _clock.GetUtcNow();
+        var rows = await _db.Rates.AsNoTracking()
+            .Where(r => r.EffectiveFrom <= now)
+            .OrderByDescending(r => r.EffectiveFrom)
+            .ThenByDescending(r => r.Id)
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
+
+        var current = new Dictionary<(string Method, string Side, string Wallet), decimal?>();
+        foreach (var row in rows)
+        {
+            current.TryAdd((row.MethodId, row.Side, row.WalletCurrencyCode), row.Rate);
+        }
+
+        var result = new Dictionary<string, IReadOnlyList<P2PMethodRateDto>>(StringComparer.Ordinal);
+        foreach (var method in current.Keys.Select(k => k.Method).Distinct(StringComparer.Ordinal))
+        {
+            var list = new List<P2PMethodRateDto>();
+            foreach (var wallet in _catalog.Holdable)
+            {
+                var sell = current.GetValueOrDefault((method, "sell", wallet.Code));
+                var buy = current.GetValueOrDefault((method, "buy", wallet.Code));
+                if (sell is null && buy is null) continue;
+                list.Add(new P2PMethodRateDto(wallet.Code, Format(sell), Format(buy)));
+            }
+
+            result[method] = list;
+        }
+
+        return result;
     }
 
     private static void RequireQuoteStillHolds(string? quoted, decimal current)
@@ -1219,13 +1411,21 @@ public sealed class P2PService
         }
     }
 
-    private static void RequireTradeableAmount(TradeMethod method, Money amount)
+    /// <summary>
+    /// The wallet side: a positive amount in a currency customers hold.
+    /// </summary>
+    /// <remarks>
+    /// The catalogue's holdable set is the rule — today E-ISLA, USDT and USDC.
+    /// A peso or a dollar here would be a trade of local money for local
+    /// money, which is not what this desk does.
+    /// </remarks>
+    private void RequireTradeableAmount(Money amount)
     {
-        if (amount.Currency != method.WalletCurrency)
+        if (!IsHoldable(amount.Currency.Code))
         {
             throw new P2PException(
                 P2PErrors.InvalidAmount, 422,
-                $"That rail trades {method.WalletCurrencyCode}.");
+                $"{amount.Currency.Code} is not a currency this market trades from a wallet.");
         }
 
         if (!amount.IsPositive)
@@ -1233,25 +1433,32 @@ public sealed class P2PService
             throw new P2PException(
                 P2PErrors.InvalidAmount, 422, "A trade must be for more than zero.");
         }
+    }
 
-        if (amount < method.Minimum)
+    /// <summary>The local leg against the rail's limits, which are in that currency.</summary>
+    private static void RequireWithinLimits(TradeMethod method, Money local)
+    {
+        if (local < method.Minimum)
         {
             var failure = new P2PException(
                 P2PErrors.BelowMinimum, 422, $"The minimum is {method.Minimum}.");
             failure.Facts["minimum"] = method.Minimum.ToString();
-            failure.Facts["currency"] = method.WalletCurrencyCode;
+            failure.Facts["currency"] = method.LocalCurrencyCode;
             throw failure;
         }
 
-        if (amount > method.Maximum)
+        if (local > method.Maximum)
         {
             var failure = new P2PException(
                 P2PErrors.AboveMaximum, 422, $"The maximum is {method.Maximum}.");
             failure.Facts["maximum"] = method.Maximum.ToString();
-            failure.Facts["currency"] = method.WalletCurrencyCode;
+            failure.Facts["currency"] = method.LocalCurrencyCode;
             throw failure;
         }
     }
+
+    private bool IsHoldable(string code) =>
+        _catalog.Holdable.Any(c => string.Equals(c.Code, code, StringComparison.Ordinal));
 
     private async Task<TradeMethod> RequireMethodAsync(
         string methodId, CancellationToken cancellationToken) =>
@@ -1312,6 +1519,106 @@ public sealed class P2PService
             ExpiresAt: trade.ExpiresAt,
             SettledAt: trade.SettledAt,
             PayoutTo: trade.PayoutTo);
+    }
+
+    private static P2PQueueItemDto OperatorView(Trade t, DateTimeOffset now) => new(
+        Id: t.Id.ToString("D", CultureInfo.InvariantCulture),
+        Side: ParseSide(t.Side),
+        MethodId: t.MethodId,
+        MethodName: t.MethodName,
+        UserId: t.UserId,
+        UserName: t.UserName,
+        Amount: t.Amount,
+        Local: t.Local,
+        Status: t.Status,
+        Reference: t.Reference,
+        CreatedAt: t.CreatedAt,
+        Waiting: (t.SettledAt ?? now) - t.CreatedAt,
+        PayoutTo: t.PayoutTo,
+        ExpiresAt: t.ExpiresAt,
+        SettledAt: t.SettledAt,
+        OperatorReference: t.OperatorReference,
+        FailureReason: t.FailureReason);
+
+    private static P2PAdminMethodDto AdminView(
+        TradeMethod m, IReadOnlyList<P2PMethodRateDto> rates) => new(
+        Id: m.Id,
+        Name: m.Name,
+        Code: m.LocalCurrencyCode,
+        Available: m.Available,
+        Instructions: m.Instructions,
+        Minimum: m.Minimum,
+        Maximum: m.Maximum,
+        Rates: rates,
+        UpdatedAt: m.UpdatedAt);
+
+    /// <summary>
+    /// The local side of a new rail: a fiat currency, switched on, that no
+    /// customer holds.
+    /// </summary>
+    private Currency RequireLocalCurrency(string? code)
+    {
+        var info = _catalog.Describe(code?.Trim().ToUpperInvariant());
+        if (info is null || !info.Enabled)
+        {
+            throw new P2PException(
+                P2PErrors.InvalidCurrency, 422,
+                $"'{code}' is not a currency the catalogue has switched on. Enable it there first.");
+        }
+
+        if (!string.Equals(info.Kind, CurrencyKinds.Fiat, StringComparison.Ordinal) || info.CustomerHoldable)
+        {
+            throw new P2PException(
+                P2PErrors.InvalidCurrency, 422,
+                $"{info.Code} is held in wallets; a rail's local side is money paid outside IslaPay.");
+        }
+
+        return info.Currency;
+    }
+
+    private static string RequireInstructions(string? instructions)
+    {
+        var text = (instructions ?? string.Empty).Trim();
+        if (text.Length > MaximumInstructionsLength)
+        {
+            throw new P2PException(
+                P2PErrors.InvalidInstructions, 422,
+                $"Instructions are limited to {MaximumInstructionsLength} characters.");
+        }
+
+        return text;
+    }
+
+    private static (Money Minimum, Money Maximum) RequireLimits(
+        Currency local, Money minimum, Money maximum)
+    {
+        if (minimum.Currency != local || maximum.Currency != local)
+        {
+            throw new P2PException(
+                P2PErrors.InvalidLimits, 422, $"A rail's limits are in its own currency, {local.Code}.");
+        }
+
+        if (!minimum.IsPositive || maximum < minimum)
+        {
+            throw new P2PException(
+                P2PErrors.InvalidLimits, 422,
+                "The minimum must be above zero and no larger than the maximum.");
+        }
+
+        return (minimum, maximum);
+    }
+
+    private static string RequireMethodName(string name)
+    {
+        var text = name.Trim();
+        if (text.Length == 0 || text.Length > MaximumMethodNameLength)
+        {
+            throw new P2PException(
+                P2PErrors.InvalidMethodName, 422,
+                $"A rail's name is between 1 and {MaximumMethodNameLength} characters.");
+        }
+
+        return text;
     }
 
     private static string Wire(P2PSide side) => side == P2PSide.Sell ? "sell" : "buy";

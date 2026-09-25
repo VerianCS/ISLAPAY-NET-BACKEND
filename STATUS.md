@@ -20,7 +20,7 @@ Those are four different things and several modules are only the first two.
 | Ledger | 0 | 4 | 16 + 15 domain | **Works**, no HTTP surface by design |
 | Wallet | 3 | — (reads the ledger) | 8 | **Works** |
 | Marketplace | 10 | 2 | 23 | **Works** |
-| P2P | 13 | 3 | 33 | **Works** — needs an operator |
+| P2P | 17 | 3 | 41 | **Works** — needs an operator |
 | Custody | 3 | 2 | 20 | **Works** — needs a custodian |
 | Treasury | 4 | 0 (reads the ledger) | 16 | **Works** — needs a console |
 | Exchange | 0 | 0 | 4 | Contracts only |
@@ -273,8 +273,8 @@ quote, the rate source and the endpoint do not.
 
 ## P2P — works, and waits for a person
 
-Twelve routes: the rails and their rates, a quote, open a trade, read it,
-cancel it, list your own — and five for whoever settles them.
+Seventeen routes: the rails and their rates, a quote, open a trade, read it,
+cancel it, list your own — and eleven for whoever settles them.
 
 Worth being clear about what this is, because the name misleads: it is instant
 exchange **against IslaPay** at a published rate, not a user-to-user market.
@@ -298,6 +298,24 @@ and custody, when they arrive, hold escrow in E-ISLA, USDC and USDT only.
 **Owns three tables.** `methods` (rails), `rates` (appended, never updated, so
 a trade settled last Tuesday is still explicable at the price it was given)
 and `trades`.
+
+**A rail is a currency, not a channel.** There is one `cup` rail, whichever
+app the pesos move through — where to pay is what its instructions say. The
+wallet side is whatever the catalogue marks customer-holdable (today E-ISLA,
+USDT and USDC), each with its own sell and buy price on the same rail; a side
+left unpublished is not offered, and publishing an empty rate withdraws one.
+Limits are in the local currency (500 to 60,000 CUP), because the peso leg is
+what the desk actually moves. Migration 005 turned `cup_transfermovil` into
+`cup` and pointed its rates and trades at it; trades keep the name they were
+placed under.
+
+**The desk edits rails without SQL:** `GET`/`POST /v1/admin/p2p/methods`
+lists and opens rails (one per fiat currency the catalogue has switched on,
+created off and unpriced), `PATCH /v1/admin/p2p/methods/{id}` renames one or
+moves its limits. **And finds what the queue does not show:**
+`GET /v1/admin/p2p/trades?reference=&status=` — a buy that expired and was
+paid late, which the receipt route still accepts, is found by the reference
+the bank printed (with or without the dash, any case) or by `status=expired`.
 
 Two things it does that are not obvious and are deliberate:
 
@@ -326,8 +344,8 @@ where it was going, so the operator had a name and nothing to pay into.
 its reference. The column existed from the start with nothing able to write
 it, so until that route every buy told the buyer to pay and not where.
 
-**Not real yet:** there is no operator console, only the endpoints one would
-call, behind a `p2p-operator` realm role. There is no Transfermóvil
+**Not real yet:** the operator console is being built on these endpoints,
+which sit behind a `p2p-operator` realm role. There is no Transfermóvil
 integration — a person does it by hand and types the bank's reference back in.
 The desk's CUP is funded through Treasury
 (`POST /v1/admin/treasury/credits` into `settlement_fund`), like any other

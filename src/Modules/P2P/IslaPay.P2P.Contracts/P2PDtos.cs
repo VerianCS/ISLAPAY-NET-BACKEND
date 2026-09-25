@@ -55,6 +55,13 @@ public static class P2PTradeStatuses
     /// <summary>Called off before anything was committed.</summary>
     public const string Cancelled = "cancelled";
 
+    /// <summary>Every status, for validating one that arrives as text.</summary>
+    public static IReadOnlySet<string> All { get; } = new HashSet<string>(StringComparer.Ordinal)
+    {
+        Pending, AwaitingPayout, AwaitingPayment, Settling,
+        Completed, Refunded, Expired, Cancelled,
+    };
+
     /// <summary>Statuses from which no further movement is possible.</summary>
     public static IReadOnlySet<string> Terminal { get; } =
         new HashSet<string>(StringComparer.Ordinal) { Completed, Refunded, Expired, Cancelled };
@@ -78,39 +85,99 @@ public static class P2PSettleIntents
 }
 
 /// <summary>
-/// A payment rail the instant-exchange market accepts.
+/// A local currency the instant-exchange market trades against.
 /// </summary>
-/// <param name="Id">Stable identifier, sent back on a quote and a trade.</param>
-/// <param name="Name">Display name, e.g. <c>CUP Transfermóvil</c>.</param>
+/// <remarks>
+/// A rail is a currency, not a channel: there is one <c>CUP</c>, whichever app
+/// the peso moves through. The wallet side is any currency a customer holds
+/// (E-ISLA, USDT, USDC), each with its own prices in <see cref="Rates"/>.
+/// </remarks>
+/// <param name="Id">Stable identifier, sent back on a quote and a trade. The currency code in lower case.</param>
+/// <param name="Name">Display name, e.g. <c>CUP</c>.</param>
 /// <param name="Code">Local currency code shown on the avatar, e.g. <c>CUP</c>.</param>
-/// <param name="SellRate">
-/// Units of <paramref name="Code"/> per one wallet unit when the user sells, as
-/// a decimal string.
-/// </param>
-/// <param name="BuyRate">
-/// The same for a buy, and deliberately a different number: the spread between
-/// the two is where the rail's cost lives. A single rate would mean IslaPay
-/// trades against itself at par and loses money on every round trip.
-/// </param>
 /// <param name="Available">
 /// Whether the rail can be traded right now. A rail that is temporarily down
 /// stays in the list, greyed, rather than vanishing — a method disappearing
-/// without explanation reads as a bug to the user.
+/// without explanation reads as a bug to the user. False also when no wallet
+/// currency has a price.
 /// </param>
-/// <param name="Minimum">Smallest trade, in the wallet currency.</param>
-/// <param name="Maximum">Largest trade, in the wallet currency.</param>
+/// <param name="Minimum">Smallest trade, in the local currency.</param>
+/// <param name="Maximum">Largest trade, in the local currency.</param>
+/// <param name="Rates">
+/// One entry per wallet currency that has at least one price. A currency
+/// missing here cannot be traded on this rail at all.
+/// </param>
 public sealed record P2PMethodDto(
     string Id,
     string Name,
     string Code,
-    string SellRate,
-    string BuyRate,
     bool Available,
     Money Minimum,
-    Money Maximum);
+    Money Maximum,
+    IReadOnlyList<P2PMethodRateDto> Rates);
+
+/// <summary>The prices of one wallet currency on one rail.</summary>
+/// <param name="Currency">The wallet currency, e.g. <c>EISLA</c>.</param>
+/// <param name="SellRate">
+/// Units of local currency per one wallet unit when the user sells, as a
+/// decimal string; null when IslaPay is not buying that currency here.
+/// </param>
+/// <param name="BuyRate">
+/// The same for a buy, and deliberately a different number: the spread between
+/// the two is where the rail's cost lives. Null when IslaPay is not selling.
+/// A rail with only one of the two is one-way, which is a choice the operator
+/// makes by publishing only that side.
+/// </param>
+public sealed record P2PMethodRateDto(string Currency, string? SellRate, string? BuyRate);
+
+/// <summary>
+/// A rail as the operator sees it: everything the market shows plus what only
+/// the desk edits.
+/// </summary>
+/// <param name="Available">The switch as the operator set it, whatever the prices say.</param>
+public sealed record P2PAdminMethodDto(
+    string Id,
+    string Name,
+    string Code,
+    bool Available,
+    string Instructions,
+    Money Minimum,
+    Money Maximum,
+    IReadOnlyList<P2PMethodRateDto> Rates,
+    DateTimeOffset UpdatedAt);
+
+/// <summary><c>POST /v1/admin/p2p/methods</c>.</summary>
+/// <remarks>
+/// A new rail starts switched off and with no prices, so creating it never
+/// starts it quoting. The id is the currency code in lower case.
+/// </remarks>
+/// <param name="Currency">
+/// The local currency, which must be a fiat currency switched on in the
+/// catalogue.
+/// </param>
+/// <param name="Name">Display name; the currency code when omitted.</param>
+/// <param name="Minimum">Smallest trade, in <paramref name="Currency"/>.</param>
+/// <param name="Maximum">Largest trade, in <paramref name="Currency"/>.</param>
+public sealed record P2PMethodCreate(
+    string Currency,
+    Money Minimum,
+    Money Maximum,
+    string? Name = null,
+    string? Instructions = null);
+
+/// <summary><c>PATCH /v1/admin/p2p/methods/{id}</c>. A field left out stays as it is.</summary>
+/// <param name="Minimum">In the rail's local currency.</param>
+/// <param name="Maximum">In the rail's local currency.</param>
+public sealed record P2PMethodUpdate(
+    string? Name = null,
+    Money? Minimum = null,
+    Money? Maximum = null);
 
 /// <summary><c>POST /v1/p2p/quotes</c>. Costs nothing and commits to nothing.</summary>
-/// <param name="Amount">Amount in the wallet currency, before the fee.</param>
+/// <param name="Amount">
+/// Amount in the wallet currency, before the fee. Its currency picks which of
+/// the rail's prices applies.
+/// </param>
 public sealed record P2PQuoteRequest(P2PSide Side, Money Amount, string MethodId);
 
 /// <summary>
@@ -231,7 +298,11 @@ public sealed record P2PQueueItemDto(
     string Reference,
     DateTimeOffset CreatedAt,
     TimeSpan Waiting,
-    string? PayoutTo = null);
+    string? PayoutTo = null,
+    DateTimeOffset? ExpiresAt = null,
+    DateTimeOffset? SettledAt = null,
+    string? OperatorReference = null,
+    string? FailureReason = null);
 
 /// <summary>
 /// <c>POST /v1/admin/p2p/trades/{id}/settle</c>. Requires an
@@ -268,8 +339,13 @@ public sealed record P2PInstructionsUpdate(string Instructions);
 /// so a trade settled last Tuesday can still be shown at the rate it was
 /// actually priced at.
 /// </remarks>
+/// <param name="Rate">
+/// Units of local currency per one wallet unit. Null or empty withdraws the
+/// price, which is how a side stops being offered: another row, not a
+/// deletion, so the history still says when it stopped.
+/// </param>
 public sealed record P2PRateUpdate(
     string MethodId,
     P2PSide Side,
     string WalletCurrency,
-    string Rate);
+    string? Rate);
