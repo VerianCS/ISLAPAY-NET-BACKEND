@@ -261,6 +261,41 @@ public class P2PTests
         Assert.Contains(wallet.Transactions.Items, t => t.Amount.ToString() == "-120.00");
     }
 
+    [SkippableFact]
+    public async Task Every_p2p_movement_reads_as_p2p_in_the_wallet()
+    {
+        Skip.IfNot(_fixture.Available, "No Keycloak or no Postgres reachable.");
+
+        await using var host = _fixture.Build();
+        var operador = await OperatorAsync(host);
+        await OpenTheMarketAsync(host, operador);
+        await FundTheDeskAsync(host, TestCurrencies.Cup, "5000000.00");
+        await FundTheDeskAsync(host, TestCurrencies.EIsla, "10000.00");
+        var user = await FundedUserAsync(host, "200.00");
+
+        // A sale, a sale that fails and comes back, and a purchase credited.
+        await TradeAsync(host, user, P2PSide.Sell, "50.00");
+        var failed = await Read<P2PTradeDto>(await TradeAsync(host, user, P2PSide.Sell, "20.00"));
+        await PostAsync(host, operador, $"/v1/admin/p2p/trades/{failed.Id}/failed",
+            new P2PFailRequest("El teléfono no está registrado en Transfermóvil."));
+        var buy = await Read<P2PTradeDto>(await TradeAsync(host, user, P2PSide.Buy, "40.00"));
+        await PostAsync(host, operador, $"/v1/admin/p2p/trades/{buy.Id}/received",
+            new P2PSettleRequest("TM-777"));
+
+        var wallet = await Read<Wallet.Contracts.WalletResponse>(
+            await GetAsync(host, user, "/v1/me/wallet"));
+        var types = wallet.Transactions.Items.Select(t => t.Type).ToList();
+
+        // Found by a run through the app: all three read "Pago QR".
+        Assert.DoesNotContain(Wallet.Contracts.LedgerEntryTypes.QrPayment, types);
+        Assert.Equal(2, types.Count(t => t == Wallet.Contracts.LedgerEntryTypes.P2PSell));
+        Assert.Contains(Wallet.Contracts.LedgerEntryTypes.P2PRefund, types);
+        Assert.Contains(Wallet.Contracts.LedgerEntryTypes.P2PBuy, types);
+        Assert.All(
+            wallet.Transactions.Items.Where(t => t.Type.StartsWith("p2p_", StringComparison.Ordinal)),
+            t => Assert.Equal("CUP", t.Meta["method"]));
+    }
+
     /// <summary>
     /// Writes every P2P response a phone reads, as the server really sends them.
     /// </summary>

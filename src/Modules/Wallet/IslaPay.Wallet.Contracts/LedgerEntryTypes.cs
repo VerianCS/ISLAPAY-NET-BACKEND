@@ -61,6 +61,12 @@ public static class LedgerEntryTypes
     /// <summary>Money in. <c>meta</c>: <c>method</c>, <c>fee</c>.</summary>
     public const string P2PBuy = "p2p_buy";
 
+    /// <summary>
+    /// Money in: a sale the desk could not pay, given back. <c>meta</c>:
+    /// <c>method</c>, <c>reference</c>.
+    /// </summary>
+    public const string P2PRefund = "p2p_refund";
+
     /// <summary>Every type above. For validation and tests, not for dispatch.</summary>
     public static IReadOnlySet<string> All { get; } =
         new HashSet<string>(StringComparer.Ordinal)
@@ -74,5 +80,6 @@ public static class LedgerEntryTypes
             StorePurchase,
             P2PSell,
             P2PBuy,
+            P2PRefund,
         };
 }

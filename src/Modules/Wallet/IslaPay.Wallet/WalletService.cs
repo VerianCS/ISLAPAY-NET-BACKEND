@@ -261,7 +261,16 @@ public sealed class WalletService
             "transfer" => incoming ? LedgerEntryTypes.TransferReceived : LedgerEntryTypes.TransferSent,
             "conversion" => LedgerEntryTypes.Conversion,
             "settlement" => LedgerEntryTypes.Recharge,
-            "payment" => LedgerEntryTypes.QrPayment,
+            // P2P posts as a payment and says which in its metadata. Reading
+            // only the posting's kind turned every sale, purchase and refund
+            // of the exchange desk into "Pago QR" in the customer's history.
+            "payment" => entry.Metadata.GetValueOrDefault("kind") switch
+            {
+                "p2p_sell" => LedgerEntryTypes.P2PSell,
+                "p2p_credit" => LedgerEntryTypes.P2PBuy,
+                "p2p_refund" => LedgerEntryTypes.P2PRefund,
+                _ => LedgerEntryTypes.QrPayment,
+            },
             // Unknown to this build. Passed through rather than dropped: the
             // client already tolerates a type it does not know, and a movement
             // missing from a statement is worse than one labelled oddly.
