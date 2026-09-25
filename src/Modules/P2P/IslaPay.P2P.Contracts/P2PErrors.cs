@@ -83,6 +83,25 @@ public static class P2PErrors
     public const string InvalidInstructions = "invalid_instructions";
 
     /// <summary>
+    /// A currency that cannot stand where it was put: a wallet side that no
+    /// customer holds, or a local side that is not a switched-on fiat
+    /// currency.
+    /// </summary>
+    public const string InvalidCurrency = "invalid_currency";
+
+    /// <summary>A rail's limits that are not a range: zero, negative or upside down.</summary>
+    public const string InvalidLimits = "invalid_limits";
+
+    /// <summary>A rail's name that is empty or longer than a screen shows.</summary>
+    public const string InvalidMethodName = "invalid_method_name";
+
+    /// <summary>
+    /// There is already a rail for that currency. One currency, one rail: the
+    /// peso is one market however many apps move it.
+    /// </summary>
+    public const string MethodExists = "method_exists";
+
+    /// <summary>
     /// This module's codes whose <c>meta</c> must carry a <c>currency</c>,
     /// because the client's corresponding type cannot be constructed without
     /// one.

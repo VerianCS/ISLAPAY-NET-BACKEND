@@ -20,7 +20,7 @@ namespace IslaPay.P2P.Tests;
 [Collection(P2PDefinition.Name)]
 public sealed class TradeRepairTests : IAsyncLifetime
 {
-    private const string Rail = "cup_transfermovil";
+    private const string Rail = "cup";
     private const string Card = "9205 1299 0000 1234";
 
     private readonly P2PFixture _fixture;

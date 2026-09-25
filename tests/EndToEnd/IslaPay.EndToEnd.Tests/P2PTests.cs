@@ -13,6 +13,7 @@ using IslaPay.Platform;
 using IslaPay.Platform.Api;
 using IslaPay.Platform.AspNet;
 using IslaPay.Platform.Serialization;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace IslaPay.EndToEnd.Tests;
@@ -32,7 +33,7 @@ namespace IslaPay.EndToEnd.Tests;
 public class P2PTests
 {
     private const string Password = "Correct-Horse-9";
-    private const string Rail = "cup_transfermovil";
+    private const string Rail = "cup";
     private static readonly JsonSerializerOptions Json = IslaPayJson.Create(TestCurrencies.Scales);
 
     private readonly IslaPayHostFixture _fixture;
@@ -307,7 +308,18 @@ public class P2PTests
         await FundTheDeskAsync(host, TestCurrencies.Cup, "5000000.00");
         await FundTheDeskAsync(host, TestCurrencies.EIsla, "10000.00");
 
+        // USDT bought for pesos but not sold: a rail's prices are per wallet
+        // currency, and a side left unpublished is one it does not offer.
+        using (var usdt = host.CreateClient())
+        {
+            Authorize(usdt, operador.AccessToken);
+            (await usdt.PutAsJsonAsync(
+                "/v1/admin/p2p/rates", new P2PRateUpdate(Rail, P2PSide.Buy, "USDT", "130"), Json))
+                .EnsureSuccessStatusCode();
+        }
+
         await Save("methods.json", await GetAsync(host, user, "/v1/p2p/methods"));
+        await Save("admin-methods.json", await GetAsync(host, operador, "/v1/admin/p2p/methods"));
         await Save("quote-sell.json", await Quote(P2PSide.Sell, "100.00"));
         await Save("quote-buy.json", await Quote(P2PSide.Buy, "40.00"));
 
@@ -332,8 +344,17 @@ public class P2PTests
 
         await Save("my-trades.json", await GetAsync(host, user, "/v1/me/p2p/trades?limit=20"));
 
-        // The two refusals a sale can meet: more than the rail allows, and
-        // more than the wallet holds (300 funded, 100 sold, 20 refunded).
+        // What the desk sees: a sale waiting on a payout, and a trade found
+        // by the reference a customer read out.
+        var waiting = await Read<P2PTradeDto>(await TradeAsync(host, user, P2PSide.Sell, "10.00"));
+        await Save("admin-queue.json", await GetAsync(host, operador, "/v1/admin/p2p/queue"));
+        await Save("admin-search.json", await GetAsync(
+            host, operador, $"/v1/admin/p2p/trades?reference={sale.Reference}"));
+        await PostAsync(host, operador, $"/v1/admin/p2p/trades/{waiting.Id}/paid", new P2PSettleRequest("TM-55513"));
+
+        // The two refusals a sale can meet: more than the rail allows (in
+        // pesos: 900 E-ISLA is 106,920 CUP against 60,000), and more than the
+        // wallet holds (300 funded, 100 and 10 sold, 20 refunded).
         await Save(
             "error-above-maximum.json",
             await TradeAsync(host, user, P2PSide.Sell, "900.00"),
@@ -391,6 +412,101 @@ public class P2PTests
         Assert.Contains(P2PErrors.InvalidInstructions, await response.Content.ReadAsStringAsync());
     }
 
+    [SkippableFact]
+    public async Task The_desk_opens_a_rail_for_another_currency_without_touching_the_database()
+    {
+        Skip.IfNot(_fixture.Available, "No Keycloak or no Postgres reachable.");
+
+        await using var host = _fixture.Build();
+        var operador = await OperatorAsync(host);
+        var user = await VerifiedUserAsync(host);
+
+        // The catalogue lists the peso mexicano switched off. Switching it on
+        // is the catalogue's decision, made by whoever holds that role.
+        await _fixture.Keycloak.GrantRealmRoleAsync(operador.UserId, "catalog-admin");
+        operador = await SignInAgainAsync(host, operador);
+        await SetCurrencyEnabledAsync(host, operador, "MXN", true);
+
+        try
+        {
+            var create = new P2PMethodCreate(
+                "MXN",
+                Money.Parse("100.00", TestCurrencies.Mxn),
+                Money.Parse("20000.00", TestCurrencies.Mxn),
+                Name: "Peso mexicano");
+
+            var refused = await PostAsync(host, user, "/v1/admin/p2p/methods", create);
+            Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
+
+            var created = await PostAsync(host, operador, "/v1/admin/p2p/methods", create);
+            Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+            var rail = await Read<P2PAdminMethodDto>(created);
+            Assert.Equal("mxn", rail.Id);
+            Assert.False(rail.Available);
+            Assert.Empty(rail.Rates);
+
+            // Created off and unpriced: the market lists it greyed.
+            var listed = (await Read<List<P2PMethodDto>>(await GetAsync(host, user, "/v1/p2p/methods")))
+                .Single(m => m.Id == "mxn");
+            Assert.False(listed.Available);
+            Assert.Equal("MXN", listed.Code);
+
+            var again = await PostAsync(host, operador, "/v1/admin/p2p/methods", create);
+            Assert.Equal(HttpStatusCode.Conflict, again.StatusCode);
+            Assert.Contains(P2PErrors.MethodExists, await again.Content.ReadAsStringAsync());
+
+            using var client = host.CreateClient();
+            Authorize(client, operador.AccessToken);
+            var patched = await client.PatchAsync(
+                new Uri("/v1/admin/p2p/methods/mxn", UriKind.Relative),
+                JsonContent.Create(
+                    new P2PMethodUpdate(Maximum: Money.Parse("5000.00", TestCurrencies.Mxn)),
+                    options: Json));
+            Assert.True(patched.IsSuccessStatusCode, await patched.Content.ReadAsStringAsync());
+            Assert.Equal("5000.00", (await Read<P2PAdminMethodDto>(patched)).Maximum.ToString());
+
+            var desk = await Read<List<P2PAdminMethodDto>>(await GetAsync(host, operador, "/v1/admin/p2p/methods"));
+            Assert.Contains(desk, m => m.Id == "mxn" && m.Maximum.ToString() == "5000.00");
+            Assert.Contains(desk, m => m.Id == Rail);
+        }
+        finally
+        {
+            // The rail goes before the currency it is in, so the next run and
+            // every other test see the catalogue as seeded.
+            using var scope = host.Services.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<P2PDbContext>().Database
+                .ExecuteSqlRawAsync("DELETE FROM p2p.methods WHERE id = 'mxn'");
+            await SetCurrencyEnabledAsync(host, operador, "MXN", false);
+        }
+    }
+
+    [SkippableFact]
+    public async Task The_desk_finds_a_trade_by_the_reference_it_was_given()
+    {
+        Skip.IfNot(_fixture.Available, "No Keycloak or no Postgres reachable.");
+
+        await using var host = _fixture.Build();
+        var operador = await OperatorAsync(host);
+        await OpenTheMarketAsync(host, operador);
+        await FundTheDeskAsync(host, TestCurrencies.EIsla, "10000.00");
+        var user = await VerifiedUserAsync(host);
+
+        var buy = await Read<P2PTradeDto>(await TradeAsync(host, user, P2PSide.Buy, "20.00"));
+        var typed = buy.Reference.Replace("-", string.Empty, StringComparison.Ordinal).ToLowerInvariant();
+
+        var found = await Read<List<P2PQueueItemDto>>(
+            await GetAsync(host, operador, $"/v1/admin/p2p/trades?reference={typed}"));
+        var item = Assert.Single(found);
+        Assert.Equal(buy.Id, item.Id);
+        Assert.Equal(buy.ExpiresAt, item.ExpiresAt);
+
+        var customer = await GetAsync(host, user, $"/v1/admin/p2p/trades?reference={typed}");
+        Assert.Equal(HttpStatusCode.Forbidden, customer.StatusCode);
+
+        var nonsense = await GetAsync(host, operador, "/v1/admin/p2p/trades?status=lost");
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, nonsense.StatusCode);
+    }
+
     // ---------------------------------------------------------------- helpers
 
     private sealed record Account(string UserId, string Email, string Phone, string AccessToken);
@@ -402,8 +518,15 @@ public class P2PTests
 
         await _fixture.Keycloak.GrantRealmRoleAsync(account.UserId, P2PModule.OperatorRole);
 
-        // Signed in again: roles are baked into a token when it is issued, and
-        // the one from registration predates the grant.
+        return await SignInAgainAsync(host, account);
+    }
+
+    /// <summary>
+    /// A fresh token: roles are baked into one when it is issued, and an
+    /// older one predates the grant.
+    /// </summary>
+    private static async Task<Account> SignInAgainAsync(IslaPayHost host, Account account)
+    {
         using var client = host.CreateClient();
         var response = await client.PostAsJsonAsync(
             "/v1/auth/login", new LoginRequest(account.Email, Password), Json);
@@ -411,6 +534,18 @@ public class P2PTests
 
         var session = (await response.Content.ReadFromJsonAsync<AuthSessionResponse>(Json))!;
         return account with { AccessToken = session.Tokens.AccessToken };
+    }
+
+    private static async Task SetCurrencyEnabledAsync(
+        IslaPayHost host, Account admin, string code, bool value)
+    {
+        using var client = host.CreateClient();
+        Authorize(client, admin.AccessToken);
+        var response = await client.PutAsync(
+            new Uri($"/v1/admin/catalog/currencies/{code}/enabled?value={(value ? "true" : "false")}", UriKind.Relative),
+            null);
+        Assert.True(response.IsSuccessStatusCode,
+            $"catalogue {code}: {(int)response.StatusCode} {await response.Content.ReadAsStringAsync()}");
     }
 
     private const string Instructions =

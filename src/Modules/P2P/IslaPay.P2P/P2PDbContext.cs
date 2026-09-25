@@ -23,29 +23,24 @@ public sealed class TradeMethod
     /// </remarks>
     public int LocalScale { get; set; }
 
-    public string WalletCurrencyCode { get; set; } = string.Empty;
-
-    /// <summary>See <c>LocalScale</c>.</summary>
-    public int WalletScale { get; set; }
-
     public bool Available { get; set; }
 
     /// <summary>Where a buyer sends their local money. Read by a human.</summary>
     public string Instructions { get; set; } = string.Empty;
 
+    /// <summary>In the local currency: the leg the desk actually moves.</summary>
     public long MinimumMinor { get; set; }
 
+    /// <summary>See <c>MinimumMinor</c>.</summary>
     public long MaximumMinor { get; set; }
 
     public DateTimeOffset UpdatedAt { get; set; }
 
     public Currency LocalCurrency => Currency.Of(LocalCurrencyCode, LocalScale);
 
-    public Currency WalletCurrency => Currency.Of(WalletCurrencyCode, WalletScale);
+    public Money Minimum => Money.FromMinorUnits(MinimumMinor, LocalCurrency);
 
-    public Money Minimum => Money.FromMinorUnits(MinimumMinor, WalletCurrency);
-
-    public Money Maximum => Money.FromMinorUnits(MaximumMinor, WalletCurrency);
+    public Money Maximum => Money.FromMinorUnits(MaximumMinor, LocalCurrency);
 }
 
 /// <summary>A row of <c>p2p.rates</c>: a price, and when it started applying.</summary>
@@ -63,13 +58,14 @@ public sealed class TradeRate
     public int WalletScale { get; set; }
 
     /// <summary>
-    /// Units of local currency per one wallet unit.
+    /// Units of local currency per one wallet unit, or null from the moment
+    /// the side was withdrawn.
     /// </summary>
     /// <remarks>
     /// <c>decimal</c> against a <c>numeric</c> column, never a double. This
     /// number multiplies money.
     /// </remarks>
-    public decimal Rate { get; set; }
+    public decimal? Rate { get; set; }
 
     public DateTimeOffset EffectiveFrom { get; set; }
 
@@ -198,15 +194,12 @@ public sealed class P2PDbContext : DbContext
             method.Property(m => m.Name).HasColumnName("name");
             method.Property(m => m.LocalCurrencyCode).HasColumnName("local_currency");
             method.Property(m => m.LocalScale).HasColumnName("local_scale");
-            method.Property(m => m.WalletCurrencyCode).HasColumnName("wallet_currency");
-            method.Property(m => m.WalletScale).HasColumnName("wallet_scale");
             method.Property(m => m.Available).HasColumnName("available");
             method.Property(m => m.Instructions).HasColumnName("instructions");
             method.Property(m => m.MinimumMinor).HasColumnName("minimum_minor");
             method.Property(m => m.MaximumMinor).HasColumnName("maximum_minor");
             method.Property(m => m.UpdatedAt).HasColumnName("updated_at");
             method.Ignore(m => m.LocalCurrency);
-            method.Ignore(m => m.WalletCurrency);
             method.Ignore(m => m.Minimum);
             method.Ignore(m => m.Maximum);
         });
