@@ -260,6 +260,137 @@ public class P2PTests
         Assert.Contains(wallet.Transactions.Items, t => t.Amount.ToString() == "-120.00");
     }
 
+    /// <summary>
+    /// Writes every P2P response a phone reads, as the server really sends them.
+    /// </summary>
+    /// <remarks>
+    /// For the Flutter client's tests, which parse these files rather than a
+    /// body somebody typed. Covers both directions and every status a user can
+    /// see a trade in, plus the two refusals the client has to tell apart from
+    /// a failure: a quote that cannot be executed, and an error body.
+    /// <para>
+    /// Skipped unless <c>P2P_CAPTURE_PATH</c> names a directory:
+    /// <c>P2P_CAPTURE_PATH=/tmp/p2p dotnet test --filter
+    /// FullyQualifiedName~Capture_the_p2p_responses</c>.
+    /// </para>
+    /// </remarks>
+    [SkippableFact]
+    public async Task Capture_the_p2p_responses()
+    {
+        Skip.IfNot(_fixture.Available, "No Keycloak or no Postgres reachable.");
+        var into = Environment.GetEnvironmentVariable("P2P_CAPTURE_PATH");
+        Skip.If(string.IsNullOrEmpty(into), "no capture path");
+        Directory.CreateDirectory(into!);
+
+        await using var host = _fixture.Build();
+        var operador = await OperatorAsync(host);
+        await OpenTheMarketAsync(host, operador);
+        await SetInstructionsAsync(host, operador, Instructions);
+        var user = await FundedUserAsync(host, "300.00");
+
+        async Task<string> Save(string name, HttpResponseMessage response, bool ok = true)
+        {
+            var body = await response.Content.ReadAsStringAsync();
+            Assert.True(response.IsSuccessStatusCode == ok, $"{name}: {(int)response.StatusCode} {body}");
+            await File.WriteAllTextAsync(Path.Combine(into!, name), body);
+            return body;
+        }
+
+        Task<HttpResponseMessage> Quote(P2PSide side, string amount) => PostAsync(
+            host, user, "/v1/p2p/quotes",
+            new P2PQuoteRequest(side, Money.Parse(amount, TestCurrencies.EIsla), Rail));
+
+        // A sale the desk cannot pay for yet: a 200 that says no.
+        await DrainTheDeskAsync(host, TestCurrencies.Cup);
+        await Save("quote-unfunded.json", await Quote(P2PSide.Sell, "100.00"));
+
+        await FundTheDeskAsync(host, TestCurrencies.Cup, "5000000.00");
+        await FundTheDeskAsync(host, TestCurrencies.EIsla, "10000.00");
+
+        await Save("methods.json", await GetAsync(host, user, "/v1/p2p/methods"));
+        await Save("quote-sell.json", await Quote(P2PSide.Sell, "100.00"));
+        await Save("quote-buy.json", await Quote(P2PSide.Buy, "40.00"));
+
+        // A sale waiting on the operator, then paid.
+        var sale = await Read<P2PTradeDto>(await TradeAsync(host, user, P2PSide.Sell, "100.00"));
+        await Save("trade-sell-open.json", await GetAsync(host, user, $"/v1/p2p/trades/{sale.Id}"));
+        await Save("trade-sell-completed.json", await PostAsync(
+            host, operador, $"/v1/admin/p2p/trades/{sale.Id}/paid",
+            new P2PSettleRequest("TM-55512")));
+
+        // A sale the operator could not pay: money back.
+        var failed = await Read<P2PTradeDto>(await TradeAsync(host, user, P2PSide.Sell, "20.00"));
+        await Save("trade-sell-refunded.json", await PostAsync(
+            host, operador, $"/v1/admin/p2p/trades/{failed.Id}/failed",
+            new P2PFailRequest("El teléfono no está registrado en Transfermóvil.")));
+
+        // A purchase: instructions to follow, then called off.
+        var buy = await Read<P2PTradeDto>(await TradeAsync(host, user, P2PSide.Buy, "40.00"));
+        await Save("trade-buy-open.json", await GetAsync(host, user, $"/v1/p2p/trades/{buy.Id}"));
+        await Save("trade-buy-cancelled.json", await PostAsync(
+            host, user, $"/v1/p2p/trades/{buy.Id}/cancel", new { }));
+
+        await Save("my-trades.json", await GetAsync(host, user, "/v1/me/p2p/trades?limit=20"));
+
+        // The two refusals a sale can meet: more than the rail allows, and
+        // more than the wallet holds (300 funded, 100 sold, 20 refunded).
+        await Save(
+            "error-above-maximum.json",
+            await TradeAsync(host, user, P2PSide.Sell, "900.00"),
+            ok: false);
+        await Save(
+            "error-insufficient-funds.json",
+            await TradeAsync(host, user, P2PSide.Sell, "450.00"),
+            ok: false);
+    }
+
+    [SkippableFact]
+    public async Task A_buyer_is_told_where_to_send_the_money()
+    {
+        Skip.IfNot(_fixture.Available, "No Keycloak or no Postgres reachable.");
+
+        await using var host = _fixture.Build();
+        var operador = await OperatorAsync(host);
+        await OpenTheMarketAsync(host, operador);
+        await FundTheDeskAsync(host, TestCurrencies.EIsla, "10000.00");
+        var user = await VerifiedUserAsync(host);
+
+        // Without instructions the buy says nothing about where to pay.
+        await SetInstructionsAsync(host, operador, "   ");
+        var silent = await Read<P2PTradeDto>(await TradeAsync(host, user, P2PSide.Buy, "20.00"));
+        Assert.Null(silent.Instructions);
+
+        await SetInstructionsAsync(host, operador, Instructions);
+        var told = await Read<P2PTradeDto>(await GetAsync(host, user, $"/v1/p2p/trades/{silent.Id}"));
+        Assert.Equal(Instructions, told.Instructions);
+
+        // Only the operator writes them.
+        using var client = host.CreateClient();
+        Authorize(client, user.AccessToken);
+        var refused = await client.PutAsJsonAsync(
+            $"/v1/admin/p2p/methods/{Rail}/instructions", new P2PInstructionsUpdate("x"), Json);
+        Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
+    }
+
+    [SkippableFact]
+    public async Task Instructions_longer_than_a_person_reads_are_refused()
+    {
+        Skip.IfNot(_fixture.Available, "No Keycloak or no Postgres reachable.");
+
+        await using var host = _fixture.Build();
+        var operador = await OperatorAsync(host);
+
+        using var client = host.CreateClient();
+        Authorize(client, operador.AccessToken);
+        var response = await client.PutAsJsonAsync(
+            $"/v1/admin/p2p/methods/{Rail}/instructions",
+            new P2PInstructionsUpdate(new string('a', P2PService.MaximumInstructionsLength + 1)),
+            Json);
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        Assert.Contains(P2PErrors.InvalidInstructions, await response.Content.ReadAsStringAsync());
+    }
+
     // ---------------------------------------------------------------- helpers
 
     private sealed record Account(string UserId, string Email, string Phone, string AccessToken);
@@ -280,6 +411,20 @@ public class P2PTests
 
         var session = (await response.Content.ReadFromJsonAsync<AuthSessionResponse>(Json))!;
         return account with { AccessToken = session.Tokens.AccessToken };
+    }
+
+    private const string Instructions =
+        "Transfermóvil a la tarjeta 9227 0699 9532 1234 (IslaPay S.A.). "
+        + "Escribe la referencia de la operación en la nota.";
+
+    private static async Task SetInstructionsAsync(IslaPayHost host, Account operador, string text)
+    {
+        using var client = host.CreateClient();
+        Authorize(client, operador.AccessToken);
+        var response = await client.PutAsJsonAsync(
+            $"/v1/admin/p2p/methods/{Rail}/instructions", new P2PInstructionsUpdate(text), Json);
+        Assert.True(response.IsSuccessStatusCode,
+            $"set instructions: {(int)response.StatusCode} {await response.Content.ReadAsStringAsync()}");
     }
 
     /// <summary>Publishes both rates and switches the rail on.</summary>
@@ -309,7 +454,10 @@ public class P2PTests
         IslaPayHost host, Account user, P2PSide side, string amount, string? key = null) =>
         PostAsync(
             host, user, "/v1/p2p/trades",
-            new P2PTradeRequest(side, Money.Parse(amount, TestCurrencies.EIsla), Rail), key);
+            new P2PTradeRequest(
+                side, Money.Parse(amount, TestCurrencies.EIsla), Rail,
+                PayoutTo: side == P2PSide.Sell ? "9205 1299 0000 1234" : null),
+            key);
 
     private static async Task<HttpResponseMessage> PostAsync(
         IslaPayHost host, Account actor, string path, object body, string? key = null)

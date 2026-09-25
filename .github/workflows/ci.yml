@@ -129,7 +129,20 @@ jobs:
       # overwrite the previous project's results, leaving an artifact that
       # reports one assembly and a skip guard that can only see one assembly.
       # The default name is unique per run.
+      # The wire captures skip without a path to write to, and a skip fails
+      # the guard below. Giving them one makes CI run them against the real
+      # stack, which is also the check that the responses the app's fixtures
+      # were taken from still come back the same shape. What they write is
+      # uploaded with the results.
+      - name: Prepare the wire captures
+        run: mkdir -p artifacts/wire
+
       - name: Test
+        env:
+          WALLET_CAPTURE_PATH: ${{ github.workspace }}/artifacts/wire/wallet.json
+          CATALOG_CAPTURE_PATH: ${{ github.workspace }}/artifacts/wire/catalog
+          MARKET_CAPTURE_PATH: ${{ github.workspace }}/artifacts/wire/market
+          P2P_CAPTURE_PATH: ${{ github.workspace }}/artifacts/wire/p2p
         run: >
           dotnet test
           --no-build
@@ -170,7 +183,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-results
-          path: artifacts/test-results
+          path: |
+            artifacts/test-results
+            artifacts/wire
           retention-days: 14
 
   format:

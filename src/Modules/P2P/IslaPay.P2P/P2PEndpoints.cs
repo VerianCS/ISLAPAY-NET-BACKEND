@@ -125,6 +125,13 @@ public static class P2PEndpoints
             await p2p.SetAvailabilityAsync(id, value, ct).ConfigureAwait(false);
             return TypedResults.NoContent();
         });
+
+        group.MapPut("/methods/{id}/instructions", async (
+            string id, P2PInstructionsUpdate update, P2PService p2p, CancellationToken ct) =>
+        {
+            await p2p.SetInstructionsAsync(id, update.Instructions, ct).ConfigureAwait(false);
+            return TypedResults.NoContent();
+        });
     }
 
     /// <summary>

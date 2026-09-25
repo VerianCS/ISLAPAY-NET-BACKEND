@@ -20,7 +20,7 @@ Those are four different things and several modules are only the first two.
 | Ledger | 0 | 4 | 16 + 15 domain | **Works**, no HTTP surface by design |
 | Wallet | 3 | — (reads the ledger) | 8 | **Works** |
 | Marketplace | 10 | 2 | 23 | **Works** |
-| P2P | 12 | 3 | 33 | **Works** — needs an operator |
+| P2P | 13 | 3 | 33 | **Works** — needs an operator |
 | Custody | 3 | 2 | 20 | **Works** — needs a custodian |
 | Treasury | 4 | 0 (reads the ledger) | 16 | **Works** — needs a console |
 | Exchange | 0 | 0 | 4 | Contracts only |
@@ -315,11 +315,28 @@ account and platform accounts may go negative, so nothing in the ledger stops
 IslaPay promising a payout it cannot make. `ILedger.BalanceOfAsync` was added
 for this and it is the only thing that refuses the trade.
 
+**Where a seller is paid** travels with the sale: `payoutTo` on
+`POST /v1/p2p/trades` is required for a sell (a card or phone, up to 64
+characters), stored on the trade, and shown to the seller and in the
+operator's queue. A sell used to record everything about the money except
+where it was going, so the operator had a name and nothing to pay into.
+
+**Where a buyer pays** is the rail's instructions, set with
+`PUT /v1/admin/p2p/methods/{id}/instructions` and shown on every buy next to
+its reference. The column existed from the start with nothing able to write
+it, so until that route every buy told the buyer to pay and not where.
+
 **Not real yet:** there is no operator console, only the endpoints one would
 call, behind a `p2p-operator` realm role. There is no Transfermóvil
 integration — a person does it by hand and types the bank's reference back in.
-And there is no way to fund the desk's CUP except by posting to the ledger, so
-a treasury endpoint is the next obvious gap.
+The desk's CUP is funded through Treasury
+(`POST /v1/admin/treasury/credits` into `settlement_fund`), like any other
+currency.
+
+**The app is wired to it** — methods, quotes, trades, cancel and history —
+and its tests parse responses this module really produced:
+`P2P_CAPTURE_PATH=<dir> dotnet test --filter
+FullyQualifiedName~Capture_the_p2p_responses`.
 
 It publishes `trade.committed.v1`, `trade.completed.v1` and
 `trade.refunded.v1`. **Nothing consumes them** — the first is exactly what an

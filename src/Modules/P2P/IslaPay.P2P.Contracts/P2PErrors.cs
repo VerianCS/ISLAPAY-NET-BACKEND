@@ -73,6 +73,15 @@ public static class P2PErrors
     /// </summary>
     public const string WrongSide = "wrong_side";
 
+    /// <summary>A sell that does not say where to send the local money.</summary>
+    public const string PayoutDestinationRequired = "payout_destination_required";
+
+    /// <summary>A payout destination too long to be a card or a phone.</summary>
+    public const string InvalidPayoutDestination = "invalid_payout_destination";
+
+    /// <summary>A rail's payment instructions are longer than a person reads.</summary>
+    public const string InvalidInstructions = "invalid_instructions";
+
     /// <summary>
     /// This module's codes whose <c>meta</c> must carry a <c>currency</c>,
     /// because the client's corresponding type cannot be constructed without

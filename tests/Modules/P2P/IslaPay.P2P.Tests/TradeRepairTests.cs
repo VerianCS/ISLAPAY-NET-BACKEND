@@ -21,6 +21,7 @@ namespace IslaPay.P2P.Tests;
 public sealed class TradeRepairTests : IAsyncLifetime
 {
     private const string Rail = "cup_transfermovil";
+    private const string Card = "9205 1299 0000 1234";
 
     private readonly P2PFixture _fixture;
 
@@ -61,7 +62,7 @@ public sealed class TradeRepairTests : IAsyncLifetime
     }
 
     private static Task<P2PTradeDto> SellAsync(World w, string amount = "100.00") =>
-        w.Service.OpenAsync(w.User, new P2PTradeRequest(P2PSide.Sell, EIsla(amount), Rail));
+        w.Service.OpenAsync(w.User, new P2PTradeRequest(P2PSide.Sell, EIsla(amount), Rail, PayoutTo: Card));
 
     [SkippableFact]
     public async Task A_commit_that_landed_before_the_crash_is_adopted_not_re_posted()

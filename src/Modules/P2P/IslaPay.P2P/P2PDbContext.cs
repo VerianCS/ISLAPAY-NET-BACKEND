@@ -131,6 +131,9 @@ public sealed class Trade
 
     public string? FailureReason { get; set; }
 
+    /// <summary>Where a seller's local money goes. Null on a buy.</summary>
+    public string? PayoutTo { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; }
 
     public DateTimeOffset ExpiresAt { get; set; }
@@ -245,6 +248,7 @@ public sealed class P2PDbContext : DbContext
             trade.Property(t => t.Status).HasColumnName("status");
             trade.Property(t => t.SettleIntent).HasColumnName("settle_intent");
             trade.Property(t => t.FailureReason).HasColumnName("failure_reason");
+            trade.Property(t => t.PayoutTo).HasColumnName("payout_to");
             trade.Property(t => t.CreatedAt).HasColumnName("created_at");
             trade.Property(t => t.ExpiresAt).HasColumnName("expires_at");
             trade.Property(t => t.SettledAt).HasColumnName("settled_at");

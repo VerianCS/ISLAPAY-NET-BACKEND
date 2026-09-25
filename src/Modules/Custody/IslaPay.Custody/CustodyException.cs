@@ -30,13 +30,13 @@ public sealed class CustodyException : Exception, IslaPay.Platform.Api.IApiFailu
         CustodyErrors.CurrencyNotOnNetwork,
         StatusCodes.Unprocessable,
         $"'{currency}' is not available on '{network}'.")
-    {
-        Meta = new Dictionary<string, object>(StringComparer.Ordinal)
         {
-            ["network"] = network ?? string.Empty,
-            ["currency"] = currency ?? string.Empty,
-        },
-    };
+            Meta = new Dictionary<string, object>(StringComparer.Ordinal)
+            {
+                ["network"] = network ?? string.Empty,
+                ["currency"] = currency ?? string.Empty,
+            },
+        };
 
     public static CustodyException AddressUnavailable(string detail) => new(
         CustodyErrors.AddressUnavailable, StatusCodes.Unavailable, detail);

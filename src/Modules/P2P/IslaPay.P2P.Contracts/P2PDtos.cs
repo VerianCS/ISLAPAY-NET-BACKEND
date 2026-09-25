@@ -165,11 +165,18 @@ public sealed record P2PQuoteDto(
 /// trade is refused with <c>quote_expired</c> rather than filled at a price
 /// nobody agreed to.
 /// </param>
+/// <param name="PayoutTo">
+/// On a sell, where the local money goes — the card or phone the rail pays
+/// into. Required there: a sale that takes somebody's money without saying
+/// where to send the pesos leaves the operator nobody to pay. Ignored on a
+/// buy.
+/// </param>
 public sealed record P2PTradeRequest(
     P2PSide Side,
     Money Amount,
     string MethodId,
-    string? QuotedRate = null);
+    string? QuotedRate = null,
+    string? PayoutTo = null);
 
 /// <summary>A trade, from the user's side.</summary>
 /// <param name="Reference">
@@ -182,6 +189,7 @@ public sealed record P2PTradeRequest(
 /// the one sending.
 /// </param>
 /// <param name="FailureReason">Why a refund happened, in the operator's words.</param>
+/// <param name="PayoutTo">On a sell, where the local money is being sent.</param>
 public sealed record P2PTradeDto(
     string Id,
     P2PSide Side,
@@ -197,7 +205,8 @@ public sealed record P2PTradeDto(
     string? FailureReason,
     DateTimeOffset CreatedAt,
     DateTimeOffset ExpiresAt,
-    DateTimeOffset? SettledAt);
+    DateTimeOffset? SettledAt,
+    string? PayoutTo = null);
 
 // ------------------------------------------------------------------ operator
 
@@ -221,7 +230,8 @@ public sealed record P2PQueueItemDto(
     string Status,
     string Reference,
     DateTimeOffset CreatedAt,
-    TimeSpan Waiting);
+    TimeSpan Waiting,
+    string? PayoutTo = null);
 
 /// <summary>
 /// <c>POST /v1/admin/p2p/trades/{id}/settle</c>. Requires an
@@ -239,6 +249,18 @@ public sealed record P2PSettleRequest(string Reference);
 /// internal code is not.
 /// </param>
 public sealed record P2PFailRequest(string Reason);
+
+/// <summary><c>PUT /v1/admin/p2p/methods/{id}/instructions</c>.</summary>
+/// <param name="Instructions">
+/// Where a buyer sends the local money: the account or phone, the name on it,
+/// and what to write in the transfer's note. Shown to the buyer as written,
+/// next to the trade's reference. Empty clears it.
+/// </param>
+/// <remarks>
+/// Until this existed the rail's instructions were a column nothing could
+/// write, so every buy told its buyer to pay and not where.
+/// </remarks>
+public sealed record P2PInstructionsUpdate(string Instructions);
 
 /// <summary><c>PUT /v1/admin/p2p/rates</c>.</summary>
 /// <remarks>

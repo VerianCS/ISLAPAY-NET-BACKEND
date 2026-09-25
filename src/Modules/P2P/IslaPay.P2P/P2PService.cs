@@ -271,7 +271,9 @@ public sealed class P2PService
             throw failure;
         }
 
-        var trade = await InsertAsync(user, method, request.Side, priced, rate, cancellationToken)
+        var payoutTo = request.Side == P2PSide.Sell ? RequirePayoutDestination(request.PayoutTo) : null;
+
+        var trade = await InsertAsync(user, method, request.Side, priced, rate, payoutTo, cancellationToken)
             .ConfigureAwait(false);
 
         // A buy stops here. Nothing has moved and nothing should: the user now
@@ -320,7 +322,9 @@ public sealed class P2PService
                 P2PErrors.TradeNotOpen, 409, "This trade is no longer waiting on anything.");
         }
 
-        await RefundAsync(trade, "Called off by the customer.", operatorId: null, cancellationToken)
+        // Stored as the failure reason and shown to the user as written, like
+        // an operator's; so in their language, not a log line's.
+        await RefundAsync(trade, "Cancelaste la venta antes de que se enviaran los pesos.", operatorId: null, cancellationToken)
             .ConfigureAwait(false);
 
         return await ProjectAsync(trade, cancellationToken).ConfigureAwait(false);
@@ -356,7 +360,8 @@ public sealed class P2PService
                 Status: t.Status,
                 Reference: t.Reference,
                 CreatedAt: t.CreatedAt,
-                Waiting: now - t.CreatedAt))
+                Waiting: now - t.CreatedAt,
+                PayoutTo: t.PayoutTo))
         ];
     }
 
@@ -504,6 +509,38 @@ public sealed class P2PService
         _db.ChangeTracker.Clear();
     }
 
+    /// <summary>The longest instructions a rail may carry.</summary>
+    public const int MaximumInstructionsLength = 1000;
+
+    /// <summary>
+    /// Sets what a buyer is told about where to send the local money.
+    /// </summary>
+    /// <remarks>
+    /// Read at the moment a buy is shown, not copied onto the trade: if the
+    /// desk changes account, a buyer who has not paid yet should see the new
+    /// one rather than the one that was current when they pressed the button.
+    /// </remarks>
+    public async Task SetInstructionsAsync(
+        string methodId, string instructions, CancellationToken cancellationToken = default)
+    {
+        var text = (instructions ?? string.Empty).Trim();
+        if (text.Length > MaximumInstructionsLength)
+        {
+            throw new P2PException(
+                P2PErrors.InvalidInstructions, 422,
+                $"Instructions are limited to {MaximumInstructionsLength} characters.");
+        }
+
+        var method = await _db.Methods
+            .FirstOrDefaultAsync(m => m.Id == methodId, cancellationToken).ConfigureAwait(false)
+            ?? throw new P2PException(P2PErrors.MethodNotFound, 404, "No such rail.");
+
+        method.Instructions = text;
+        method.UpdatedAt = _clock.GetUtcNow();
+        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        _db.ChangeTracker.Clear();
+    }
+
     // -------------------------------------------------------------- the repair
 
     /// <summary>
@@ -618,12 +655,44 @@ public sealed class P2PService
     /// posting and throws it away. The opposite order would leave money in
     /// escrow with nothing pointing at it.
     /// </remarks>
+    /// <summary>The longest payout destination a sell may carry.</summary>
+    public const int MaximumPayoutDestinationLength = 64;
+
+    /// <summary>
+    /// Where a seller's pesos go, or a refusal before any money moves.
+    /// </summary>
+    /// <remarks>
+    /// Checked last among the refusals, after the price and the fund: the
+    /// cheaper answers — wrong amount, no rate — are the ones a person fixes
+    /// first, and they do not depend on this.
+    /// </remarks>
+    private static string RequirePayoutDestination(string? payoutTo)
+    {
+        var text = payoutTo?.Trim();
+        if (string.IsNullOrEmpty(text))
+        {
+            throw new P2PException(
+                P2PErrors.PayoutDestinationRequired, 422,
+                "A sale has to say where to send the local money.");
+        }
+
+        if (text.Length > MaximumPayoutDestinationLength)
+        {
+            throw new P2PException(
+                P2PErrors.InvalidPayoutDestination, 422,
+                $"A payout destination is at most {MaximumPayoutDestinationLength} characters.");
+        }
+
+        return text;
+    }
+
     private async Task<Trade> InsertAsync(
         DirectoryUser user,
         TradeMethod method,
         P2PSide side,
         P2PQuoteDto priced,
         decimal rate,
+        string? payoutTo,
         CancellationToken cancellationToken)
     {
         var now = _clock.GetUtcNow();
@@ -645,6 +714,7 @@ public sealed class P2PService
             LocalMinor = priced.Local.MinorUnits,
             Rate = rate,
             Reference = TradeReference.New(),
+            PayoutTo = payoutTo,
             Status = side == P2PSide.Sell
                 ? P2PTradeStatuses.Pending
                 : P2PTradeStatuses.AwaitingPayment,
@@ -1240,7 +1310,8 @@ public sealed class P2PService
             FailureReason: trade.FailureReason,
             CreatedAt: trade.CreatedAt,
             ExpiresAt: trade.ExpiresAt,
-            SettledAt: trade.SettledAt);
+            SettledAt: trade.SettledAt,
+            PayoutTo: trade.PayoutTo);
     }
 
     private static string Wire(P2PSide side) => side == P2PSide.Sell ? "sell" : "buy";
