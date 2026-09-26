@@ -62,3 +62,30 @@ public sealed record QuoteResponse(
 /// shown.
 /// </remarks>
 public sealed record ConversionRequest(string QuoteId);
+
+/// <summary>What <c>POST /v1/exchange/conversions</c> answers: the conversion, as posted.</summary>
+/// <param name="PostingId">The ledger posting. The wallet's history shows it as two movements.</param>
+/// <param name="Applied">False when this quote had already been converted: nothing moved twice.</param>
+public sealed record ConversionReceipt(
+    Guid PostingId,
+    string From,
+    string To,
+    Money Amount,
+    Money Fee,
+    Money Received,
+    string Rate,
+    DateTimeOffset At,
+    bool Applied);
+
+/// <summary>
+/// The rates the exchange converts at, for a module that shows them.
+/// </summary>
+/// <remarks>
+/// The wallet screen shows rates beside balances (D1). They used to be a
+/// placeholder in Wallet; they are the exchange's, so the exchange says them.
+/// </remarks>
+public interface IExchangeRates
+{
+    /// <summary><c>FROM_TO</c> → units of TO per one FROM, as a decimal string.</summary>
+    IReadOnlyDictionary<string, string> Rates();
+}

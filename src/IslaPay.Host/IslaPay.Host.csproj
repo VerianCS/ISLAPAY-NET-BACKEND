@@ -16,6 +16,7 @@
     -->
     <ProjectReference Include="..\Modules\Catalog\IslaPay.Catalog\IslaPay.Catalog.csproj" />
     <ProjectReference Include="..\Modules\Custody\IslaPay.Custody\IslaPay.Custody.csproj" />
+    <ProjectReference Include="..\Modules\Exchange\IslaPay.Exchange\IslaPay.Exchange.csproj" />
     <ProjectReference Include="..\Modules\Identity\IslaPay.Identity\IslaPay.Identity.csproj" />
     <ProjectReference Include="..\Modules\Ledger\IslaPay.Ledger\IslaPay.Ledger.csproj" />
     <ProjectReference Include="..\Modules\Marketplace\IslaPay.Marketplace\IslaPay.Marketplace.csproj" />

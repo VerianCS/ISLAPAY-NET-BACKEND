@@ -15,6 +15,15 @@ public static class ExchangeErrors
     /// </summary>
     public const string QuoteExpired = "quote_expired";
 
+    /// <summary>The quote was not issued by this server, or not to this caller.</summary>
+    public const string QuoteInvalid = "quote_invalid";
+
+    /// <summary>The pair cannot be converted: a currency is unknown, off, not holdable, or both are the same.</summary>
+    public const string PairUnavailable = "pair_unavailable";
+
+    /// <summary>The amount is zero, negative, or too small to receive anything.</summary>
+    public const string InvalidAmount = "invalid_amount";
+
     /// <summary>See <c>WalletErrors.RequireCurrencyMeta</c> for why this is per module.</summary>
     public static IReadOnlySet<string> RequireCurrencyMeta { get; } =
         new HashSet<string>(StringComparer.Ordinal) { FundUnavailable };

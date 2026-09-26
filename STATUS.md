@@ -190,6 +190,23 @@ response was `text/plain` with a .NET stack trace in it — unparseable by the
 client, and a description of the server's internals to anybody who sent a bad
 body. Both are caught now.
 
+**Issued, since this change, from one place.** The ledger has an issuer
+account, `platform:issuer:EISLA`; its balance negated is all the E-ISLA in
+existence. `POST /v1/admin/treasury/mints` and `/burns` create proposals that a
+second person approves, like a credit; a mint that would leave E-ISLA
+outstanding beyond the USDT and USDC IslaPay holds in its own name (float,
+settlement fund, fees — not escrow) is refused at approval
+(`reserve_insufficient`, `meta.headroom`), one issuance at a time. E-ISLA can no
+longer be credited from a mirror (`not_creditable`). `GET
+/v1/admin/treasury/issuance` reports what is outstanding, the reserves, the
+headroom and any account holding E-ISLA it did not get from the issuer. At
+start-up, the E-ISLA that existed before the issuer (the negatives of the float
+and the mirrors) is moved onto it in one posting, once.
+
+What this does not do: stop a module or a test from posting E-ISLA out of the
+float directly — the ledger allows platform accounts to go negative — so the
+report lists those as strays rather than the ledger refusing them.
+
 ---
 
 ## Wallet — works
@@ -258,16 +275,28 @@ it and no package that can read a QR code.
 
 ---
 
-## Exchange — contracts only
+## Exchange — works
 
-85 lines of DTOs, 4 tests over them, no implementation, no routes, no tables.
-`API_CONTRACT.md` agrees the shapes of `/v1/exchange/quotes` and
-`/v1/exchange/conversions`; nothing serves them.
+`POST /v1/exchange/quotes` and `POST /v1/exchange/conversions` (⚿), between
+whatever a customer holds and is switched on: E-ISLA, USDT, USDC.
 
-The posting structure is written and tested — `Conversions.BuildConversion` in
-the ledger's domain, with the fee in basis points and a fee leg that is omitted
-rather than posted as zero when it rounds away. So the money part exists; the
-quote, the rate source and the endpoint do not.
+- **Price.** Rate 1 (all three are worth a dollar); fee 1 % in the currency
+  given, to `fees`; what arrives is rounded **down** to the target's decimals,
+  and the fraction below stays in the fund. The settlement fund takes what is
+  given and pays what arrives: converting USDT into E-ISLA puts the USDT in the
+  reserve the issuer counts.
+- **Quotes are not stored.** A quote id is the quote, signed with the host's
+  data-protection keys: the person, the pair, the amount and a 30-second
+  expiry. A conversion carries only the id, so nobody executes at figures
+  they were not shown, and abandoned quotes need no sweeping. Several
+  instances must share the key ring.
+- **Once per quote.** The posting is keyed by the quote, so the same quote sent
+  again with a new `Idempotency-Key` answers `applied: false` and moves nothing.
+- **Not executable** is a normal answer with a reason: `insufficient_funds`,
+  `fund_unavailable` (the fund cannot pay; E-ISLA is minted to stock it),
+  `phone_not_verified`, `account_frozen`. Converting is not capped by the
+  verification level: nothing leaves the person's hands.
+- The wallet's `rates` now come from the exchange (`IExchangeRates`).
 
 ---
 

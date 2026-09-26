@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\IslaPay.Exchange.Contracts\IslaPay.Exchange.Contracts.csproj" />
+    <!--
+      Through contracts only: the ledger moves the money, the catalogue says
+      which currencies may be converted, and Identity says whether the person
+      may move money at all. No schema: a quote is signed and carried by the
+      client, and the conversion is a ledger posting keyed by it.
+    -->
+    <ProjectReference Include="..\..\Catalog\IslaPay.Catalog.Contracts\IslaPay.Catalog.Contracts.csproj" />
+    <ProjectReference Include="..\..\Ledger\IslaPay.Ledger.Contracts\IslaPay.Ledger.Contracts.csproj" />
+    <ProjectReference Include="..\..\Identity\IslaPay.Identity.Contracts\IslaPay.Identity.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\Platform\IslaPay.Platform.AspNet\IslaPay.Platform.AspNet.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,4 +1,5 @@
 using IslaPay.Catalog.Contracts;
+using IslaPay.Exchange.Contracts;
 using IslaPay.Identity.Contracts;
 using IslaPay.Ledger.Contracts;
 using IslaPay.Platform;
@@ -30,7 +31,8 @@ public sealed class WalletService
         ILedger ledger,
         ICurrencyCatalog catalog,
         IUserDirectory directory,
-        WalletOptions options)
+        WalletOptions options,
+        IExchangeRates? rates = null)
     {
         ArgumentNullException.ThrowIfNull(ledger);
         ArgumentNullException.ThrowIfNull(catalog);
@@ -40,7 +42,10 @@ public sealed class WalletService
         _catalog = catalog;
         _directory = directory;
         _options = options;
+        _rates = rates;
     }
+
+    private readonly IExchangeRates? _rates;
 
     /// <summary>
     /// The currencies every account holder gets.
@@ -286,29 +291,27 @@ public sealed class WalletService
     }
 
     /// <summary>
-    /// Placeholder rates, and knowingly so.
+    /// The exchange's rates, or parity where no exchange is composed.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Rates belong to the Exchange context, which has contracts and no
-    /// implementation yet. Returning parity here is honest for three
-    /// instruments that are all worth a dollar, and keeps the wallet response
-    /// the shape the client already parses; it is replaced by a call to
-    /// Exchange the day Exchange exists, and this comment is the reminder.
+    /// The rates are the exchange's to state; this only carries them onto the
+    /// wallet screen (D1). A host without the exchange module — a test that
+    /// builds Wallet alone — gets parity for every ordered pair of what a
+    /// customer holds, which is also what the exchange says today.
     /// </para>
     /// <para>
     /// Built from <see cref="OpenedOnRegistration"/> rather than typed out.
     /// Typed out, it said <c>USD_USDC</c> long after USD became E-ISLA, and
     /// nothing failed: a key the client cannot find falls back to a rate of
-    /// one, which is indistinguishable from parity right up until the day
-    /// parity ends. It also listed three of the six ordered pairs, so half the
-    /// conversions the app offers were quoted from that same silent default.
-    /// A key derived from the catalogue cannot drift from it, and a loop
+    /// one. A key derived from the catalogue cannot drift from it, and a loop
     /// cannot miss a direction.
     /// </para>
     /// </remarks>
     private Dictionary<string, string> Rates()
     {
+        if (_rates is not null) return new(_rates.Rates(), StringComparer.Ordinal);
+
         var holdable = OpenedOnRegistration;
         var rates = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var from in holdable)

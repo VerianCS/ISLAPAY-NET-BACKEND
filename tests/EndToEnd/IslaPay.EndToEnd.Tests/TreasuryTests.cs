@@ -253,7 +253,7 @@ public class TreasuryTests
         {
             var reserve = await Propose(proposer, new CreditRequest(
                 "float", Money.Parse(Math.Ceiling(short_).ToString(System.Globalization.CultureInfo.InvariantCulture),
-                    TestCurrencies.Usdt), "tron", "Reserva para emitir"));
+                    TestCurrencies.Usdt), $"bank:{Guid.NewGuid():N}"[..20], "Reserva para emitir"));
             await Approve(approver, reserve.Id);
         }
 

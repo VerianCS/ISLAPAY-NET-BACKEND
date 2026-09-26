@@ -8,6 +8,7 @@
       internals are reachable from here, which the architecture tests enforce.
     -->
     <ProjectReference Include="..\..\Catalog\IslaPay.Catalog.Contracts\IslaPay.Catalog.Contracts.csproj" />
+    <ProjectReference Include="..\..\Exchange\IslaPay.Exchange.Contracts\IslaPay.Exchange.Contracts.csproj" />
     <ProjectReference Include="..\..\Ledger\IslaPay.Ledger.Contracts\IslaPay.Ledger.Contracts.csproj" />
     <ProjectReference Include="..\..\Identity\IslaPay.Identity.Contracts\IslaPay.Identity.Contracts.csproj" />
     <ProjectReference Include="..\..\..\Platform\IslaPay.Platform.AspNet\IslaPay.Platform.AspNet.csproj" />

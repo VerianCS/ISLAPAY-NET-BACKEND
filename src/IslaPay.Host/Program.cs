@@ -1,5 +1,6 @@
 using IslaPay.Catalog;
 using IslaPay.Custody;
+using IslaPay.Exchange;
 using IslaPay.Identity;
 using IslaPay.Ledger;
 using IslaPay.Marketplace;
@@ -38,6 +39,7 @@ builder.AddIslaPayPlatform(
     new WalletModule(),
     new MarketplaceModule(),
     new P2PModule(),
+    new ExchangeModule(),
     new CustodyModule(),
     // Last: it reports on what every module above it has done, and the escrow
     // reporters it adds up are registered by those modules.

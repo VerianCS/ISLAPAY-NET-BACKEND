@@ -36,6 +36,7 @@
     <Project Path="src/Modules/Wallet/IslaPay.Wallet.Contracts/IslaPay.Wallet.Contracts.csproj" />
   </Folder>
   <Folder Name="/src/Modules/Exchange/">
+    <Project Path="src/Modules/Exchange/IslaPay.Exchange/IslaPay.Exchange.csproj" />
     <Project Path="src/Modules/Exchange/IslaPay.Exchange.Contracts/IslaPay.Exchange.Contracts.csproj" />
   </Folder>
   <Folder Name="/src/Modules/Catalog/">
