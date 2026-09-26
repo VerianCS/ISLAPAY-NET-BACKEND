@@ -160,13 +160,18 @@ public static class OpenApiDocument
             // Found by generating one.
             options.AddSchemaTransformer((schema, context, cancellationToken) =>
             {
-                var type = Nullable.GetUnderlyingType(context.JsonTypeInfo.Type)
-                    ?? context.JsonTypeInfo.Type;
+                var nullable = Nullable.GetUnderlyingType(context.JsonTypeInfo.Type);
+                var type = nullable ?? context.JsonTypeInfo.Type;
 
                 if (type != typeof(DateTimeOffset) && type != typeof(DateTime))
                     return Task.CompletedTask;
 
-                schema.Type = JsonSchemaType.String;
+                // Kept nullable when it was: a decision's time before anybody
+                // decided is absent, and a client told it is always a string
+                // would format "undefined" as a date.
+                schema.Type = nullable is null
+                    ? JsonSchemaType.String
+                    : JsonSchemaType.String | JsonSchemaType.Null;
                 schema.Format = "date-time";
                 schema.Description = "UTC, ISO 8601, to the millisecond: 2026-09-22T14:05:09.123Z.";
                 schema.Examples = [JsonValue.Create("2026-09-22T14:05:09.123Z")];
