@@ -164,7 +164,10 @@ public static class TreasuryProposalStatuses
 /// <summary>
 /// Money that one person asked to move and a second has to agree to.
 /// </summary>
-/// <param name="Kind"><c>credit</c> for now: money in from a mirror account.</param>
+/// <param name="Kind">
+/// <c>credit</c> (money in from a mirror account), <c>mint</c> (E-ISLA from
+/// the issuer into a platform account) or <c>burn</c> (E-ISLA back to it).
+/// </param>
 /// <param name="ProposedBy">The proposer's subject, from their token.</param>
 /// <param name="ProposedByName">Their user name as the token had it, for people to read.</param>
 /// <param name="PostingId">The ledger posting, once approved.</param>
@@ -188,3 +191,40 @@ public sealed record TreasuryProposalDto(
 
 /// <summary>Why a proposal was turned down. Required: a bare "no" teaches nobody anything.</summary>
 public sealed record TreasuryDecisionRequest(string? Note);
+
+/// <summary>
+/// <c>POST /v1/admin/treasury/mints</c> and <c>/burns</c>: E-ISLA created or
+/// retired, once somebody else approves.
+/// </summary>
+/// <param name="Amount">In an internal currency (E-ISLA).</param>
+/// <param name="Account">
+/// <c>settlement_fund</c> or <c>float</c>: where minted E-ISLA lands, or where
+/// burned E-ISLA is taken from.
+/// </param>
+/// <param name="Reason">Why, for whoever reads the ledger later. Required.</param>
+public sealed record IssuanceRequest(Money Amount, string Account, string Reason);
+
+/// <summary>
+/// How much E-ISLA exists, and what backs it.
+/// </summary>
+/// <param name="Outstanding">Everything the issuer has put out and not taken back.</param>
+/// <param name="Reserves">
+/// Stablecoins IslaPay holds in its own name — float, settlement fund and fees
+/// — one row per currency. Escrow is not counted: it is somebody's money.
+/// </param>
+/// <param name="ReserveTotal">The reserves summed at one dollar each, as a decimal string.</param>
+/// <param name="Headroom">How much more may be minted before the reserves stop covering it.</param>
+/// <param name="Backed">Whether the reserves cover what is outstanding.</param>
+/// <param name="Strays">
+/// Platform or mirror accounts holding negative E-ISLA: supply created outside
+/// the issuer. Should be empty; the startup step moves what was there before
+/// the issuer existed onto it.
+/// </param>
+public sealed record IssuanceDto(
+    DateTimeOffset AsOf,
+    Money Outstanding,
+    IReadOnlyList<Money> Reserves,
+    string ReserveTotal,
+    string Headroom,
+    bool Backed,
+    IReadOnlyList<TreasuryAccountDto> Strays);

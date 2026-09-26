@@ -35,6 +35,11 @@ public sealed class TreasuryModule : IIslaPayModule
 
         builder.Services.AddScoped<TreasuryService>();
         builder.Services.AddScoped<TreasuryProposals>();
+        builder.Services.AddScoped<TreasuryIssuance>();
+
+        // The E-ISLA that existed before the issuer, moved onto it once. After
+        // the catalogue has loaded, which registered first and so runs first.
+        builder.Services.AddSingleton<IStartupTask, IssuerGenesis>();
 
         // Its first table: proposals waiting for a second person. Requests,
         // not balances — the figures stay in the ledger.
@@ -45,4 +50,17 @@ public sealed class TreasuryModule : IIslaPayModule
     }
 
     public void MapEndpoints(IEndpointRouteBuilder routes) => routes.MapTreasury();
+}
+
+/// <summary>Runs <see cref="TreasuryIssuance.GenesisAsync"/> before the first request.</summary>
+public sealed class IssuerGenesis(IServiceScopeFactory scopes) : IStartupTask
+{
+    public string Name => "treasury-issuer-genesis";
+
+    public async Task RunAsync(CancellationToken cancellationToken = default)
+    {
+        await using var scope = scopes.CreateAsyncScope();
+        await scope.ServiceProvider.GetRequiredService<TreasuryIssuance>()
+            .GenesisAsync(cancellationToken).ConfigureAwait(false);
+    }
 }

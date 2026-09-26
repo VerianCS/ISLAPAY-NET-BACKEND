@@ -30,7 +30,7 @@ public class ProposalTests
     }
 
     private static CreditRequest Credit(string amount = "10.00") =>
-        new("float", Money.Parse(amount, TestCurrencies.EIsla), "capital", "Fondeo de prueba");
+        new("float", Money.Parse(amount, TestCurrencies.Usdt), "capital", "Fondeo de prueba");
 
     [SkippableFact]
     public async Task Nobody_approves_their_own_proposal_whatever_they_hold()
@@ -93,7 +93,7 @@ public class ProposalTests
 
         var refusal = await Assert.ThrowsAsync<TreasuryException>(() => proposals.ProposeCreditAsync(
             Person("ana"),
-            new CreditRequest("fees", Money.Parse("10.00", TestCurrencies.EIsla), "capital", "Mal destino"),
+            new CreditRequest("fees", Money.Parse("10.00", TestCurrencies.Usdt), "capital", "Mal destino"),
             Guid.NewGuid().ToString("N")));
         Assert.Equal(TreasuryErrors.UnknownDestination, refusal.Code);
     }

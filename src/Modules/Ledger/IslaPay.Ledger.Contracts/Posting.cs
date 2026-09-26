@@ -28,6 +28,16 @@ public enum AccountOwner
 
     /// <summary>Mirror of something held outside — a chain, a bank.</summary>
     External,
+
+    /// <summary>
+    /// Where E-ISLA comes from and goes back to.
+    /// </summary>
+    /// <remarks>
+    /// Negative by exactly the E-ISLA in circulation: minting moves some from
+    /// here to a platform account, burning moves it back. Nothing else posts
+    /// to it, so its balance is the supply, read in one place.
+    /// </remarks>
+    Issuer,
 }
 
 /// <summary>
@@ -62,6 +72,9 @@ public sealed record AccountRef(AccountOwner Owner, string Id, Currency Currency
 
     public static AccountRef CashFloat(Currency currency) =>
         new(AccountOwner.CashFloat, string.Empty, currency);
+
+    public static AccountRef Issuer(Currency currency) =>
+        new(AccountOwner.Issuer, string.Empty, currency);
 
     public static AccountRef External(string mirror, Currency currency) =>
         new(AccountOwner.External, Require(mirror), currency);

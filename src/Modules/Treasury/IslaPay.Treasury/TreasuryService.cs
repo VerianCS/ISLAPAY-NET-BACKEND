@@ -311,6 +311,16 @@ public sealed partial class TreasuryService
         // been switched off, even though one that was switched off after the
         // fact can still be reported on.
         var currency = _catalog.Require(request.Amount.Currency.Code);
+
+        // E-ISLA has no outside to come from. Crediting it from a mirror would
+        // create supply the issuer does not know about; it is minted instead.
+        if (string.Equals(_catalog.Describe(currency.Code)?.Kind, CurrencyKinds.Internal, StringComparison.Ordinal))
+        {
+            throw new TreasuryException(
+                TreasuryErrors.NotCreditable, StatusCodes.Status422UnprocessableEntity,
+                $"{currency.Code} is issued, not credited: propose a mint.");
+        }
+
         return (destination, Money.FromMinorUnits(request.Amount.MinorUnits, currency), source, reason);
     }
 
@@ -321,6 +331,7 @@ public sealed partial class TreasuryService
         AccountOwner.SettlementFund => "settlement_fund",
         AccountOwner.Escrow => "escrow",
         AccountOwner.CashFloat => "float",
+        AccountOwner.Issuer => "issuer",
         AccountOwner.External => "external",
         _ => throw new TreasuryException(
             TreasuryErrors.UnknownAccount, StatusCodes.Status500InternalServerError,
@@ -355,6 +366,7 @@ public sealed partial class TreasuryService
             "settlement_fund" => AccountRef.SettlementFund(currency),
             "escrow" => AccountRef.Escrow(currency),
             "float" => AccountRef.CashFloat(currency),
+            "issuer" => AccountRef.Issuer(currency),
             _ => throw new TreasuryException(
                 TreasuryErrors.UnknownAccount, StatusCodes.Status404NotFound,
                 $"'{name}' is not one of the house's accounts."),

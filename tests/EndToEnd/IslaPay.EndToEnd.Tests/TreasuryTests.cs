@@ -85,7 +85,7 @@ public class TreasuryTests
         var before = await FloatAsync(proposer);
 
         var proposal = await Propose(proposer, new CreditRequest(
-            "float", Money.Parse("1500.00", TestCurrencies.EIsla), mirror, "Fondeo inicial"));
+            "float", Money.Parse("1500", TestCurrencies.Usdt), mirror, "Fondeo inicial"));
 
         Assert.Equal(TreasuryProposalStatuses.Pending, proposal.Status);
         Assert.Null(proposal.PostingId);
@@ -99,13 +99,13 @@ public class TreasuryTests
             new Uri("/v1/admin/treasury/balances", UriKind.Relative)));
 
         var float_ = Assert.Single(
-            balances.Accounts, a => a.Owner == "float" && a.Balance.Currency.Code == "EISLA");
+            balances.Accounts, a => a.Owner == "float" && a.Balance.Currency.Code == "USDT");
         var source = Assert.Single(balances.Accounts, a => a.Mirror == mirror);
 
         // The two halves of one posting. Their sum is what makes the credit an
         // accounting fact rather than a number somebody typed.
-        Assert.Equal(before + 150000, float_.Balance.MinorUnits);
-        Assert.Equal(-150000, source.Balance.MinorUnits);
+        Assert.Equal(before + 1_500_000_000, float_.Balance.MinorUnits);
+        Assert.Equal(-1_500_000_000, source.Balance.MinorUnits);
     }
 
     [SkippableFact]
@@ -119,7 +119,7 @@ public class TreasuryTests
 
         var key = Guid.NewGuid().ToString("N");
         var request = new CreditRequest(
-            "settlement_fund", Money.Parse("60.00", TestCurrencies.EIsla),
+            "settlement_fund", Money.Parse("60", TestCurrencies.Usdt),
             "capital", "Un solo ingreso");
 
         var first = await Propose(proposer, request, key);
@@ -151,7 +151,7 @@ public class TreasuryTests
         using var approver = Client(host, await StaffAsync(host, StaffRoles.TreasuryApprover));
 
         var proposal = await Propose(proposer, new CreditRequest(
-            "float", Money.Parse("5.00", TestCurrencies.EIsla), "capital", "Mi propia"));
+            "float", Money.Parse("5", TestCurrencies.Usdt), "capital", "Mi propia"));
 
         var own = await Decide(proposer, proposal.Id, "approve", Guid.NewGuid().ToString("N"));
         Assert.Equal(HttpStatusCode.Forbidden, own.StatusCode);
@@ -160,7 +160,7 @@ public class TreasuryTests
             HttpMethod.Post, new Uri("/v1/admin/treasury/credits", UriKind.Relative))
         {
             Content = JsonContent.Create(new CreditRequest(
-                "float", Money.Parse("5.00", TestCurrencies.EIsla), "capital", "Aprobador"), options: Json),
+                "float", Money.Parse("5", TestCurrencies.Usdt), "capital", "Aprobador"), options: Json),
         };
         message.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString("N"));
         Assert.Equal(HttpStatusCode.Forbidden, (await approver.SendAsync(message)).StatusCode);
@@ -177,7 +177,7 @@ public class TreasuryTests
         var before = await FloatAsync(proposer);
 
         var proposal = await Propose(proposer, new CreditRequest(
-            "float", Money.Parse("99.00", TestCurrencies.EIsla), "capital", "Cifra equivocada"));
+            "float", Money.Parse("99", TestCurrencies.Usdt), "capital", "Cifra equivocada"));
 
         var bare = await approver.PostAsJsonAsync(
             $"/v1/admin/treasury/proposals/{proposal.Id}/reject", new TreasuryDecisionRequest(""), Json);
@@ -222,6 +222,64 @@ public class TreasuryTests
     }
 
     [SkippableFact]
+    public async Task E_isla_is_minted_by_two_people_and_only_against_reserves()
+    {
+        Skip.IfNot(_fixture.Available, "No Keycloak or no Postgres reachable.");
+
+        await using var host = _fixture.Build();
+        using var proposer = Client(host, await StaffAsync(host, StaffRoles.TreasuryOperator));
+        using var approver = Client(host, await StaffAsync(host, StaffRoles.TreasuryApprover));
+
+        // E-ISLA is not credited: it has no outside to come from.
+        using (var credit = new HttpRequestMessage(
+            HttpMethod.Post, new Uri("/v1/admin/treasury/credits", UriKind.Relative))
+        {
+            Content = JsonContent.Create(new CreditRequest(
+                "float", Money.Parse("10.00", TestCurrencies.EIsla), "capital", "No se ingresa"), options: Json),
+        })
+        {
+            credit.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString("N"));
+            var refused = await proposer.SendAsync(credit);
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, refused.StatusCode);
+            Assert.Equal(TreasuryErrors.NotCreditable, (await Problem(refused)).Code);
+        }
+
+        // Enough USDT in reserve for the mint, whatever other tests left behind.
+        var before = await Read<IssuanceDto>(await proposer.GetAsync(
+            new Uri("/v1/admin/treasury/issuance", UriKind.Relative)));
+        var short_ = before.Outstanding.ToDecimal() + 250m
+            - decimal.Parse(before.ReserveTotal, System.Globalization.CultureInfo.InvariantCulture);
+        if (short_ > 0)
+        {
+            var reserve = await Propose(proposer, new CreditRequest(
+                "float", Money.Parse(Math.Ceiling(short_).ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    TestCurrencies.Usdt), "tron", "Reserva para emitir"));
+            await Approve(approver, reserve.Id);
+        }
+
+        using var mint = new HttpRequestMessage(
+            HttpMethod.Post, new Uri("/v1/admin/treasury/mints", UriKind.Relative))
+        {
+            Content = JsonContent.Create(new IssuanceRequest(
+                Money.Parse("250.00", TestCurrencies.EIsla), "settlement_fund", "Existencias del cambio"),
+                options: Json),
+        };
+        mint.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString("N"));
+        var proposed = await proposer.SendAsync(mint);
+        Assert.Equal(HttpStatusCode.Created, proposed.StatusCode);
+        var proposal = await Read<TreasuryProposalDto>(proposed);
+        Assert.Equal("mint", proposal.Kind);
+
+        var approved = await Approve(approver, proposal.Id);
+        Assert.Equal(TreasuryProposalStatuses.Approved, approved.Status);
+
+        var after = await Read<IssuanceDto>(await proposer.GetAsync(
+            new Uri("/v1/admin/treasury/issuance", UriKind.Relative)));
+        Assert.Equal(before.Outstanding.MinorUnits + 25000, after.Outstanding.MinorUnits);
+        Assert.True(after.Backed);
+    }
+
+    [SkippableFact]
     public async Task One_account_history_says_who_proposed_and_who_approved()
     {
         Skip.IfNot(_fixture.Available, "No Keycloak or no Postgres reachable.");
@@ -233,11 +291,11 @@ public class TreasuryTests
         using var approver = Client(host, aprobador);
 
         var proposal = await Propose(proposer, new CreditRequest(
-            "float", Money.Parse("3.00", TestCurrencies.EIsla), "capital", "Para la historia"));
+            "float", Money.Parse("3", TestCurrencies.Usdt), "capital", "Para la historia"));
         await Approve(approver, proposal.Id);
 
         var page = await Read<LedgerEntryPage>(await proposer.GetAsync(
-            new Uri("/v1/admin/treasury/accounts/float/EISLA/entries?limit=5", UriKind.Relative)));
+            new Uri("/v1/admin/treasury/accounts/float/USDT/entries?limit=5", UriKind.Relative)));
 
         var entry = page.Items[0];
         Assert.Equal("funding", entry.Kind);
@@ -248,14 +306,14 @@ public class TreasuryTests
 
     // ---------------------------------------------------------------- helpers
 
-    /// <summary>What the float holds in E-ISLA right now, in minor units.</summary>
+    /// <summary>What the float holds in USDT right now, in minor units.</summary>
     private static async Task<long> FloatAsync(HttpClient client)
     {
         var balances = await Read<TreasuryBalancesDto>(await client.GetAsync(
             new Uri("/v1/admin/treasury/balances", UriKind.Relative)));
 
         return balances.Accounts
-            .Where(a => a.Owner == "float" && a.Balance.Currency.Code == "EISLA")
+            .Where(a => a.Owner == "float" && a.Balance.Currency.Code == "USDT")
             .Sum(a => a.Balance.MinorUnits);
     }
 

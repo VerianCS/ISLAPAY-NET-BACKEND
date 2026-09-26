@@ -37,27 +37,56 @@ public sealed class TreasuryProposals
 
     private readonly IDatabase _database;
     private readonly TreasuryService _treasury;
+    private readonly TreasuryIssuance _issuance;
     private readonly ICurrencyCatalog _catalog;
     private readonly IAuditLog _audit;
     private readonly TimeProvider _clock;
 
     public TreasuryProposals(
-        IDatabase database, TreasuryService treasury, ICurrencyCatalog catalog,
-        IAuditLog audit, TimeProvider clock)
+        IDatabase database, TreasuryService treasury, TreasuryIssuance issuance,
+        ICurrencyCatalog catalog, IAuditLog audit, TimeProvider clock)
     {
         _database = database;
         _treasury = treasury;
+        _issuance = issuance;
         _catalog = catalog;
         _audit = audit;
         _clock = clock;
     }
 
     /// <summary>Records a credit for somebody else to approve. Moves nothing.</summary>
-    public async Task<TreasuryProposalDto> ProposeCreditAsync(
+    public Task<TreasuryProposalDto> ProposeCreditAsync(
         HttpContext context, CreditRequest request, string requestKey, CancellationToken ct = default)
     {
-        ArgumentNullException.ThrowIfNull(context);
         var (destination, amount, source, reason) = _treasury.Validate(request);
+        return ProposeAsync(context, "credit", destination, amount, source, reason, requestKey, ct);
+    }
+
+    /// <summary>E-ISLA from the issuer, once somebody else approves and the reserves cover it.</summary>
+    public async Task<TreasuryProposalDto> ProposeMintAsync(
+        HttpContext context, IssuanceRequest request, string requestKey, CancellationToken ct = default)
+    {
+        var (account, amount, reason) = _issuance.Validate(request);
+        // Checked now for the proposer's sake, and again at approval, which is
+        // the check that counts: reserves move in between.
+        await _issuance.RequireCoveredAsync(amount, ct).ConfigureAwait(false);
+        return await ProposeAsync(context, "mint", account, amount, "issuer", reason, requestKey, ct)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>E-ISLA back to the issuer, once somebody else approves.</summary>
+    public Task<TreasuryProposalDto> ProposeBurnAsync(
+        HttpContext context, IssuanceRequest request, string requestKey, CancellationToken ct = default)
+    {
+        var (account, amount, reason) = _issuance.Validate(request);
+        return ProposeAsync(context, "burn", "issuer", amount, account, reason, requestKey, ct);
+    }
+
+    private async Task<TreasuryProposalDto> ProposeAsync(
+        HttpContext context, string kind, string destination, Money amount, string source, string reason,
+        string requestKey, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(context);
         var (by, byName) = Who(context.User);
         var now = _clock.GetUtcNow();
 
@@ -67,11 +96,12 @@ public sealed class TreasuryProposals
                 INSERT INTO treasury.proposals
                     (id, kind, status, destination, currency, amount_minor, source, reason,
                      proposed_by, proposed_by_name, request_key, proposed_at, expires_at)
-                VALUES (@id, 'credit', 'pending', @destination, @currency, @amount, @source, @reason,
+                VALUES (@id, @kind, 'pending', @destination, @currency, @amount, @source, @reason,
                         @by, @byName, @key, @now, @expires)
                 ON CONFLICT (proposed_by, request_key) DO NOTHING;
                 """, connection, transaction);
             insert.Parameters.AddWithValue("id", Guid.NewGuid());
+            insert.Parameters.AddWithValue("kind", kind);
             insert.Parameters.AddWithValue("destination", destination);
             insert.Parameters.AddWithValue("currency", amount.Currency.Code);
             insert.Parameters.AddWithValue("amount", amount.MinorUnits);
@@ -92,7 +122,7 @@ public sealed class TreasuryProposals
             return (await ReadAsync(read, token).ConfigureAwait(false)).Single();
         }, cancellationToken: ct).ConfigureAwait(false);
 
-        await _audit.RecordAsync(context, Record("treasury.proposal.created", proposal), ct).ConfigureAwait(false);
+        await _audit.RecordAsync(context, Record($"treasury.{kind}.proposed", proposal), ct).ConfigureAwait(false);
         return proposal;
     }
 
@@ -144,19 +174,43 @@ public sealed class TreasuryProposals
             // and then finds it approved. Keyed by the proposal: if this
             // transaction dies after the ledger committed, the next approval
             // posts nothing new and records the posting the first one made.
-            var receipt = await _treasury.CreditAsync(
-                proposal.ProposedBy,
-                new CreditRequest(proposal.Destination, proposal.Amount, proposal.Source, proposal.Reason),
-                $"proposal:{proposal.Id:N}",
-                approvedBy: by,
-                cancellationToken: token).ConfigureAwait(false);
+            Guid postingId;
+            switch (proposal.Kind)
+            {
+                case "credit":
+                    postingId = (await _treasury.CreditAsync(
+                        proposal.ProposedBy,
+                        new CreditRequest(proposal.Destination, proposal.Amount, proposal.Source, proposal.Reason),
+                        $"proposal:{proposal.Id:N}",
+                        approvedBy: by,
+                        cancellationToken: token).ConfigureAwait(false)).PostingId;
+                    break;
+
+                case "mint" or "burn":
+                    // One issuance at a time across all proposals, so two
+                    // mints approved together cannot each see the headroom the
+                    // other is about to use.
+                    await using (var serialise = new NpgsqlCommand(
+                        "SELECT pg_advisory_xact_lock(hashtext('treasury:issuance'));", connection, transaction))
+                    {
+                        await serialise.ExecuteNonQueryAsync(token).ConfigureAwait(false);
+                    }
+
+                    postingId = (proposal.Kind == "mint"
+                        ? await _issuance.MintAsync(proposal, by, token).ConfigureAwait(false)
+                        : await _issuance.BurnAsync(proposal, by, token).ConfigureAwait(false)).PostingId;
+                    break;
+
+                default:
+                    throw new InvalidOperationException($"a proposal of kind '{proposal.Kind}'.");
+            }
 
             return await DecideAsync(
                 connection, transaction, id, TreasuryProposalStatuses.Approved, by, byName, note,
-                receipt.PostingId, token).ConfigureAwait(false);
+                postingId, token).ConfigureAwait(false);
         }, cancellationToken: ct).ConfigureAwait(false);
 
-        await _audit.RecordAsync(context, Record("treasury.proposal.approved", decided), ct).ConfigureAwait(false);
+        await _audit.RecordAsync(context, Record($"treasury.{decided.Kind}.approved", decided), ct).ConfigureAwait(false);
         return decided;
     }
 
@@ -183,7 +237,7 @@ public sealed class TreasuryProposals
                 .ConfigureAwait(false);
         }, cancellationToken: ct).ConfigureAwait(false);
 
-        await _audit.RecordAsync(context, Record("treasury.proposal.rejected", decided), ct).ConfigureAwait(false);
+        await _audit.RecordAsync(context, Record($"treasury.{decided.Kind}.rejected", decided), ct).ConfigureAwait(false);
         return decided;
     }
 
@@ -210,7 +264,7 @@ public sealed class TreasuryProposals
                 .ConfigureAwait(false);
         }, cancellationToken: ct).ConfigureAwait(false);
 
-        await _audit.RecordAsync(context, Record("treasury.proposal.withdrawn", decided), ct).ConfigureAwait(false);
+        await _audit.RecordAsync(context, Record($"treasury.{decided.Kind}.withdrawn", decided), ct).ConfigureAwait(false);
         return decided;
     }
 

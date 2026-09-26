@@ -42,6 +42,14 @@ public class TreasuryTests
 
     private static Money EIslas(string amount) => Money.Parse(amount, EIsla);
 
+    /// <summary>
+    /// Credits are in USDT: E-ISLA is minted by the issuer and refused as a
+    /// credit, since it has no outside to come from.
+    /// </summary>
+    private static readonly Currency Usdt = TestCurrencies.Usdt;
+
+    private static Money Usdts(string amount) => Money.Parse(amount, Usdt);
+
     private static string NewKey() => $"k{Guid.NewGuid():N}";
 
     /// <summary>Moves money into escrow without going through any module.</summary>
@@ -66,21 +74,21 @@ public class TreasuryTests
         var treasury = Treasury();
         var ledger = Ledger();
 
-        var before = await ledger.BalanceOfAsync(AccountRef.CashFloat(EIsla));
+        var before = await ledger.BalanceOfAsync(AccountRef.CashFloat(Usdt));
 
         var receipt = await treasury.CreditAsync(
             by: "ana",
-            new CreditRequest("float", EIslas("2500.00"), "bank:bandec", "Capital inicial"),
+            new CreditRequest("float", Usdts("2500.00"), "bank:bandec", "Capital inicial"),
             NewKey());
 
         Assert.True(receipt.Applied);
-        Assert.Equal(before.MinorUnits + 250000, receipt.BalanceAfter.MinorUnits);
+        Assert.Equal(before.MinorUnits + 2_500_000_000, receipt.BalanceAfter.MinorUnits);
 
         // Double entry, and the mirror is the half that makes it auditable: the
         // float rose because the bank account fell, and a statement can be read
         // against it.
-        var mirror = await ledger.BalanceOfAsync(AccountRef.External("bank:bandec", EIsla));
-        Assert.Equal(-250000, mirror.MinorUnits);
+        var mirror = await ledger.BalanceOfAsync(AccountRef.External("bank:bandec", Usdt));
+        Assert.Equal(-2_500_000_000, mirror.MinorUnits);
     }
 
     [SkippableFact]
@@ -91,10 +99,10 @@ public class TreasuryTests
 
         await treasury.CreditAsync(
             by: "ana",
-            new CreditRequest("settlement_fund", EIslas("40.00"), "capital", "Fondeo de pruebas"),
+            new CreditRequest("settlement_fund", Usdts("40.00"), "capital", "Fondeo de pruebas"),
             NewKey());
 
-        var entries = await ledger.AccountEntriesAsync(AccountRef.SettlementFund(EIsla), 1);
+        var entries = await ledger.AccountEntriesAsync(AccountRef.SettlementFund(Usdt), 1);
         var entry = Assert.Single(entries.Items);
 
         // A credit nobody signed is indistinguishable from a mistake six months
@@ -111,14 +119,14 @@ public class TreasuryTests
         var treasury = Treasury();
         var ledger = Ledger();
         var key = NewKey();
-        var request = new CreditRequest("float", EIslas("10.00"), "capital", "Un solo ingreso");
+        var request = new CreditRequest("float", Usdts("10.00"), "capital", "Un solo ingreso");
 
         var first = await treasury.CreditAsync("ana", request, key);
-        var before = await ledger.BalanceOfAsync(AccountRef.CashFloat(EIsla));
+        var before = await ledger.BalanceOfAsync(AccountRef.CashFloat(Usdt));
 
         // A dropped connection, and the console pressing the button again.
         var second = await treasury.CreditAsync("ana", request, key);
-        var after = await ledger.BalanceOfAsync(AccountRef.CashFloat(EIsla));
+        var after = await ledger.BalanceOfAsync(AccountRef.CashFloat(Usdt));
 
         Assert.Equal(first.PostingId, second.PostingId);
         Assert.False(second.Applied);
@@ -134,7 +142,7 @@ public class TreasuryTests
         var treasury = Treasury();
 
         var refusal = await Assert.ThrowsAsync<TreasuryException>(() => treasury.CreditAsync(
-            "ana", new CreditRequest(where, EIslas("1.00"), "capital", "No debería entrar"), NewKey()));
+            "ana", new CreditRequest(where, Usdts("1.00"), "capital", "No debería entrar"), NewKey()));
 
         Assert.Equal(TreasuryErrors.UnknownDestination, refusal.Code);
     }
@@ -145,7 +153,7 @@ public class TreasuryTests
         var treasury = Treasury();
 
         var refusal = await Assert.ThrowsAsync<TreasuryException>(() => treasury.CreditAsync(
-            "ana", new CreditRequest("float", EIslas("1.00"), "capital", "  "), NewKey()));
+            "ana", new CreditRequest("float", Usdts("1.00"), "capital", "  "), NewKey()));
 
         Assert.Equal(TreasuryErrors.InvalidCredit, refusal.Code);
     }
@@ -170,7 +178,7 @@ public class TreasuryTests
         var treasury = Treasury();
 
         await treasury.CreditAsync(
-            "ana", new CreditRequest("float", EIslas("5.00"), "bank:bpa", "Para el listado"), NewKey());
+            "ana", new CreditRequest("float", Usdts("5.00"), "bank:bpa", "Para el listado"), NewKey());
 
         var balances = await treasury.BalancesAsync();
 
@@ -285,11 +293,11 @@ public class TreasuryTests
         {
             await treasury.CreditAsync(
                 "ana",
-                new CreditRequest("settlement_fund", EIslas($"{i}.00"), "capital", $"Tramo {i}"),
+                new CreditRequest("settlement_fund", Usdts($"{i}.00"), "capital", $"Tramo {i}"),
                 NewKey());
         }
 
-        var page = await treasury.EntriesAsync("settlement_fund", "EISLA", limit: 2, cursor: null);
+        var page = await treasury.EntriesAsync("settlement_fund", "USDT", limit: 2, cursor: null);
 
         Assert.Equal(2, page.Items.Count);
         Assert.NotNull(page.NextCursor);
@@ -302,9 +310,9 @@ public class TreasuryTests
         var treasury = Treasury();
 
         await treasury.CreditAsync(
-            "ana", new CreditRequest("float", EIslas("7.00"), "bank:metro", "Historia"), NewKey());
+            "ana", new CreditRequest("float", Usdts("7.00"), "bank:metro", "Historia"), NewKey());
 
-        var mirror = await treasury.EntriesAsync("external:bank:metro", "EISLA", 10, null);
+        var mirror = await treasury.EntriesAsync("external:bank:metro", "USDT", 10, null);
         Assert.NotEmpty(mirror.Items);
 
         // No route into somebody's money. This module is read by people whose

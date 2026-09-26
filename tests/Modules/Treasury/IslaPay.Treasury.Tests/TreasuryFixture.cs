@@ -34,8 +34,11 @@ public sealed class TreasuryFixture : PostgresFixture
     public TreasuryService Treasury(params IEscrowReporter[] reporters) =>
         new(Ledger(), new TestCatalog(), reporters, TimeProvider.System);
 
+    public TreasuryIssuance Issuance(TimeProvider? clock = null) =>
+        new(Ledger(), new TestCatalog(), clock ?? TimeProvider.System);
+
     public TreasuryProposals Proposals(TimeProvider? clock = null) =>
-        new(Database, Treasury(), new TestCatalog(),
+        new(Database, Treasury(), Issuance(clock), new TestCatalog(),
             new IslaPay.Platform.AspNet.Security.AuditLog(
                 Database, clock ?? TimeProvider.System,
                 Microsoft.Extensions.Logging.Abstractions.NullLogger<IslaPay.Platform.AspNet.Security.AuditLog>.Instance),

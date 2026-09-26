@@ -69,6 +69,34 @@ public static class TreasuryEndpoints
             .RequirePermission(Permissions.TreasuryPropose)
             .WithMetadata(new IdempotentAttribute());
 
+        // E-ISLA: what is out, what backs it, and the two ways to change the
+        // first — each a proposal, like a credit.
+        admin.MapGet("/issuance", async (TreasuryIssuance issuance, CancellationToken ct) =>
+            TypedResults.Ok(await issuance.ReportAsync(ct).ConfigureAwait(false)))
+            .RequirePermission(Permissions.TreasuryRead);
+
+        admin.MapPost("/mints", async (
+            IssuanceRequest request, HttpContext context,
+            TreasuryProposals proposals, CancellationToken ct) =>
+        {
+            var proposal = await proposals
+                .ProposeMintAsync(context, request, KeyOf(context), ct).ConfigureAwait(false);
+            return TypedResults.Created($"/v1/admin/treasury/proposals/{proposal.Id}", proposal);
+        })
+            .RequirePermission(Permissions.TreasuryPropose)
+            .WithMetadata(new IdempotentAttribute());
+
+        admin.MapPost("/burns", async (
+            IssuanceRequest request, HttpContext context,
+            TreasuryProposals proposals, CancellationToken ct) =>
+        {
+            var proposal = await proposals
+                .ProposeBurnAsync(context, request, KeyOf(context), ct).ConfigureAwait(false);
+            return TypedResults.Created($"/v1/admin/treasury/proposals/{proposal.Id}", proposal);
+        })
+            .RequirePermission(Permissions.TreasuryPropose)
+            .WithMetadata(new IdempotentAttribute());
+
         admin.MapGet("/proposals", async (
             string? status, int? limit, TreasuryProposals proposals, CancellationToken ct) =>
             TypedResults.Ok(await proposals.ListAsync(status, limit ?? 50, ct).ConfigureAwait(false)))

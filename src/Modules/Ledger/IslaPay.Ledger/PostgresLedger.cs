@@ -517,6 +517,7 @@ public sealed class PostgresLedger : ILedger
             ("platform", "settlement_fund") => AccountRef.SettlementFund(currency),
             ("platform", "escrow") => AccountRef.Escrow(currency),
             ("platform", "float") => AccountRef.CashFloat(currency),
+            ("platform", "issuer") => AccountRef.Issuer(currency),
             _ => throw new InvalidOperationException(
                 $"ledger.accounts holds '{ownerType}:{owner}', which the contract has no name for."),
         };
@@ -530,6 +531,7 @@ public sealed class PostgresLedger : ILedger
         AccountOwner.Escrow => AccountId.Escrow(account.Currency),
         AccountOwner.CashFloat => AccountId.CashFloat(account.Currency),
         AccountOwner.External => AccountId.External(account.Id, account.Currency),
+        AccountOwner.Issuer => AccountId.Issuer(account.Currency),
         _ => throw new ArgumentOutOfRangeException(
             nameof(account), account.Owner, "Unclassified account owner."),
     };

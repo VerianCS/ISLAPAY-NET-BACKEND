@@ -47,6 +47,23 @@ public static class TreasuryErrors
 
     /// <summary>Only whoever proposed something may withdraw it.</summary>
     public const string NotYourProposal = "not_your_proposal";
+
+    /// <summary>
+    /// E-ISLA is issued, not credited: it has no outside to come from. Mint it.
+    /// </summary>
+    public const string NotCreditable = "not_creditable";
+
+    /// <summary>
+    /// Minting this would put more E-ISLA out than the reserves cover.
+    /// <c>meta.headroom</c> says how much could be minted.
+    /// </summary>
+    public const string ReserveInsufficient = "reserve_insufficient";
+
+    /// <summary>The account holds less E-ISLA than the burn would retire.</summary>
+    public const string BurnExceedsBalance = "burn_exceeds_balance";
+
+    /// <summary>A mint or burn in a currency IslaPay does not issue.</summary>
+    public const string NotIssuable = "not_issuable";
 }
 
 /// <summary>A refusal the platform can translate without knowing this module.</summary>

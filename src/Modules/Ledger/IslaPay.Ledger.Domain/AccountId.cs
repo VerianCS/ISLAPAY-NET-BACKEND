@@ -84,6 +84,16 @@ public readonly record struct AccountId
     public static AccountId CashFloat(Currency currency) =>
         new(OwnerType.Platform, "float", currency);
 
+    /// <summary>
+    /// The issuer of an internal currency: <c>platform:issuer:EISLA</c>.
+    /// </summary>
+    /// <remarks>
+    /// A liability: its negative balance is what IslaPay owes the holders of
+    /// the currency it issued, collectively.
+    /// </remarks>
+    public static AccountId Issuer(Currency currency) =>
+        new(OwnerType.Platform, "issuer", currency);
+
     public static AccountId External(string mirror, Currency currency) =>
         new(OwnerType.External, Require(mirror), currency);
 
@@ -101,6 +111,7 @@ public readonly record struct AccountId
         {
             "fees" => AccountType.Revenue,
             "escrow" => AccountType.Liability,
+            "issuer" => AccountType.Liability,
             _ => AccountType.Asset,
         },
         _ => throw new InvalidOperationException($"Unclassified owner type {OwnerType}."),

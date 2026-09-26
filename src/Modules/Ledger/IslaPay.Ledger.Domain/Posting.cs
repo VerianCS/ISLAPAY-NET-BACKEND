@@ -24,6 +24,16 @@ public enum TransactionKind
     /// make the report that has to find every capital injection unable to.
     /// </remarks>
     Funding,
+
+    /// <summary>
+    /// E-ISLA minted from, or burned back to, the issuer.
+    /// </summary>
+    /// <remarks>
+    /// Its own kind because it changes the supply and nothing else does: the
+    /// report that has to account for every E-ISLA in existence reads exactly
+    /// these postings.
+    /// </remarks>
+    Issuance,
 }
 
 /// <summary>One leg of a transaction: an amount against an account.</summary>
