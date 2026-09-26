@@ -70,28 +70,32 @@ public class TreasuryTests
     }
 
     [SkippableFact]
-    public async Task A_credit_shows_up_on_both_sides_of_the_balances()
+    public async Task A_credit_moves_nothing_until_somebody_else_approves_it()
     {
         Skip.IfNot(_fixture.Available, "No Keycloak or no Postgres reachable.");
 
         await using var host = _fixture.Build();
-        var admin = await TreasuryAdminAsync(host);
+        using var proposer = Client(host, await StaffAsync(host, StaffRoles.TreasuryOperator));
+        using var approver = Client(host, await StaffAsync(host, StaffRoles.TreasuryApprover));
         var mirror = $"bank:{Guid.NewGuid():N}"[..20];
-
-        using var client = host.CreateClient();
-        Authorize(client, admin.AccessToken);
 
         // The difference, not the figure. Every other test in this collection
         // funds its users out of the same float, so an absolute floor would be
         // asserting about whatever ran before.
-        var before = await FloatAsync(client);
+        var before = await FloatAsync(proposer);
 
-        var receipt = await Post<CreditReceiptDto>(client, new CreditRequest(
+        var proposal = await Propose(proposer, new CreditRequest(
             "float", Money.Parse("1500.00", TestCurrencies.EIsla), mirror, "Fondeo inicial"));
 
-        Assert.True(receipt.Applied);
+        Assert.Equal(TreasuryProposalStatuses.Pending, proposal.Status);
+        Assert.Null(proposal.PostingId);
+        Assert.Equal(before, await FloatAsync(proposer));
 
-        var balances = await Read<TreasuryBalancesDto>(await client.GetAsync(
+        var approved = await Approve(approver, proposal.Id);
+        Assert.Equal(TreasuryProposalStatuses.Approved, approved.Status);
+        Assert.NotNull(approved.PostingId);
+
+        var balances = await Read<TreasuryBalancesDto>(await approver.GetAsync(
             new Uri("/v1/admin/treasury/balances", UriKind.Relative)));
 
         var float_ = Assert.Single(
@@ -105,29 +109,87 @@ public class TreasuryTests
     }
 
     [SkippableFact]
-    public async Task The_same_credit_sent_twice_is_answered_twice_and_applied_once()
+    public async Task The_same_proposal_sent_twice_is_one_proposal_and_is_approved_once()
     {
         Skip.IfNot(_fixture.Available, "No Keycloak or no Postgres reachable.");
 
         await using var host = _fixture.Build();
-        var admin = await TreasuryAdminAsync(host);
-
-        using var client = host.CreateClient();
-        Authorize(client, admin.AccessToken);
+        using var proposer = Client(host, await StaffAsync(host, StaffRoles.TreasuryOperator));
+        using var approver = Client(host, await StaffAsync(host, StaffRoles.TreasuryApprover));
 
         var key = Guid.NewGuid().ToString("N");
         var request = new CreditRequest(
             "settlement_fund", Money.Parse("60.00", TestCurrencies.EIsla),
             "capital", "Un solo ingreso");
 
-        var first = await Post<CreditReceiptDto>(client, request, key);
+        var first = await Propose(proposer, request, key);
         // The console's connection dropped and somebody pressed it again. The
         // platform's middleware replays the stored response without the
         // endpoint running at all, which is why this is worth testing from out
         // here: the module never sees the second call.
-        var second = await Post<CreditReceiptDto>(client, request, key);
+        var second = await Propose(proposer, request, key);
+        Assert.Equal(first.Id, second.Id);
 
-        Assert.Equal(first.PostingId, second.PostingId);
+        var approveKey = Guid.NewGuid().ToString("N");
+        var approved = await Approve(approver, first.Id, approveKey);
+        var replayed = await Approve(approver, first.Id, approveKey);
+        Assert.Equal(approved.PostingId, replayed.PostingId);
+
+        // A fresh press is a second decision, and there is nothing left to decide.
+        var again = await Decide(approver, first.Id, "approve", Guid.NewGuid().ToString("N"));
+        Assert.Equal(HttpStatusCode.Conflict, again.StatusCode);
+        Assert.Equal(TreasuryErrors.ProposalNotPending, (await Problem(again)).Code);
+    }
+
+    [SkippableFact]
+    public async Task A_proposer_cannot_approve_and_an_approver_cannot_propose()
+    {
+        Skip.IfNot(_fixture.Available, "No Keycloak or no Postgres reachable.");
+
+        await using var host = _fixture.Build();
+        using var proposer = Client(host, await StaffAsync(host, StaffRoles.TreasuryOperator));
+        using var approver = Client(host, await StaffAsync(host, StaffRoles.TreasuryApprover));
+
+        var proposal = await Propose(proposer, new CreditRequest(
+            "float", Money.Parse("5.00", TestCurrencies.EIsla), "capital", "Mi propia"));
+
+        var own = await Decide(proposer, proposal.Id, "approve", Guid.NewGuid().ToString("N"));
+        Assert.Equal(HttpStatusCode.Forbidden, own.StatusCode);
+
+        using var message = new HttpRequestMessage(
+            HttpMethod.Post, new Uri("/v1/admin/treasury/credits", UriKind.Relative))
+        {
+            Content = JsonContent.Create(new CreditRequest(
+                "float", Money.Parse("5.00", TestCurrencies.EIsla), "capital", "Aprobador"), options: Json),
+        };
+        message.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString("N"));
+        Assert.Equal(HttpStatusCode.Forbidden, (await approver.SendAsync(message)).StatusCode);
+    }
+
+    [SkippableFact]
+    public async Task A_rejection_says_why_and_moves_nothing()
+    {
+        Skip.IfNot(_fixture.Available, "No Keycloak or no Postgres reachable.");
+
+        await using var host = _fixture.Build();
+        using var proposer = Client(host, await StaffAsync(host, StaffRoles.TreasuryOperator));
+        using var approver = Client(host, await StaffAsync(host, StaffRoles.TreasuryApprover));
+        var before = await FloatAsync(proposer);
+
+        var proposal = await Propose(proposer, new CreditRequest(
+            "float", Money.Parse("99.00", TestCurrencies.EIsla), "capital", "Cifra equivocada"));
+
+        var bare = await approver.PostAsJsonAsync(
+            $"/v1/admin/treasury/proposals/{proposal.Id}/reject", new TreasuryDecisionRequest(""), Json);
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, bare.StatusCode);
+
+        var rejected = await Read<TreasuryProposalDto>(await approver.PostAsJsonAsync(
+            $"/v1/admin/treasury/proposals/{proposal.Id}/reject",
+            new TreasuryDecisionRequest("El extracto dice 90"), Json));
+
+        Assert.Equal(TreasuryProposalStatuses.Rejected, rejected.Status);
+        Assert.Equal("El extracto dice 90", rejected.DecisionNote);
+        Assert.Equal(before, await FloatAsync(proposer));
     }
 
     [SkippableFact]
@@ -136,7 +198,7 @@ public class TreasuryTests
         Skip.IfNot(_fixture.Available, "No Keycloak or no Postgres reachable.");
 
         await using var host = _fixture.Build();
-        var admin = await TreasuryAdminAsync(host);
+        var admin = await StaffAsync(host, StaffRoles.Auditor);
 
         using var client = host.CreateClient();
         Authorize(client, admin.AccessToken);
@@ -160,25 +222,27 @@ public class TreasuryTests
     }
 
     [SkippableFact]
-    public async Task One_account_history_is_readable_and_says_who_funded_it()
+    public async Task One_account_history_says_who_proposed_and_who_approved()
     {
         Skip.IfNot(_fixture.Available, "No Keycloak or no Postgres reachable.");
 
         await using var host = _fixture.Build();
-        var admin = await TreasuryAdminAsync(host);
+        var operador = await StaffAsync(host, StaffRoles.TreasuryOperator);
+        var aprobador = await StaffAsync(host, StaffRoles.TreasuryApprover);
+        using var proposer = Client(host, operador);
+        using var approver = Client(host, aprobador);
 
-        using var client = host.CreateClient();
-        Authorize(client, admin.AccessToken);
-
-        await Post<CreditReceiptDto>(client, new CreditRequest(
+        var proposal = await Propose(proposer, new CreditRequest(
             "float", Money.Parse("3.00", TestCurrencies.EIsla), "capital", "Para la historia"));
+        await Approve(approver, proposal.Id);
 
-        var page = await Read<LedgerEntryPage>(await client.GetAsync(
+        var page = await Read<LedgerEntryPage>(await proposer.GetAsync(
             new Uri("/v1/admin/treasury/accounts/float/EISLA/entries?limit=5", UriKind.Relative)));
 
         var entry = page.Items[0];
         Assert.Equal("funding", entry.Kind);
-        Assert.Equal(admin.UserId, entry.Metadata["by"]);
+        Assert.Equal(operador.UserId, entry.Metadata["by"]);
+        Assert.Equal(aprobador.UserId, entry.Metadata["approved_by"]);
         Assert.Equal("Para la historia", entry.Metadata["reason"]);
     }
 
@@ -202,10 +266,10 @@ public class TreasuryTests
 
     private sealed record Account(string UserId, string Email, string Phone, string AccessToken);
 
-    private async Task<Account> TreasuryAdminAsync(IslaPayHost host)
+    private async Task<Account> StaffAsync(IslaPayHost host, string role)
     {
         var account = await VerifiedUserAsync(host);
-        await _fixture.Keycloak.GrantRealmRoleAsync(account.UserId, StaffRoles.TreasuryOperator);
+        await _fixture.Keycloak.GrantRealmRoleAsync(account.UserId, role);
 
         // Signed in again: roles are baked into a token when it is issued, and
         // the one from registration predates the grant.
@@ -284,7 +348,14 @@ public class TreasuryTests
         return account;
     }
 
-    private static async Task<T> Post<T>(
+    private static HttpClient Client(IslaPayHost host, Account account)
+    {
+        var client = host.CreateClient();
+        Authorize(client, account.AccessToken);
+        return client;
+    }
+
+    private static async Task<TreasuryProposalDto> Propose(
         HttpClient client, CreditRequest request, string? key = null)
     {
         using var message = new HttpRequestMessage(
@@ -294,8 +365,27 @@ public class TreasuryTests
         };
         message.Headers.Add("Idempotency-Key", key ?? Guid.NewGuid().ToString("N"));
 
-        return await Read<T>(await client.SendAsync(message));
+        var response = await client.SendAsync(message);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        return await Read<TreasuryProposalDto>(response);
     }
+
+    private static async Task<TreasuryProposalDto> Approve(HttpClient client, Guid id, string? key = null) =>
+        await Read<TreasuryProposalDto>(await Decide(client, id, "approve", key ?? Guid.NewGuid().ToString("N")));
+
+    private static async Task<HttpResponseMessage> Decide(HttpClient client, Guid id, string verb, string key)
+    {
+        using var message = new HttpRequestMessage(
+            HttpMethod.Post, new Uri($"/v1/admin/treasury/proposals/{id}/{verb}", UriKind.Relative))
+        {
+            Content = JsonContent.Create(new TreasuryDecisionRequest(null), options: Json),
+        };
+        message.Headers.Add("Idempotency-Key", key);
+        return await client.SendAsync(message);
+    }
+
+    private static async Task<ApiProblem> Problem(HttpResponseMessage response) =>
+        JsonSerializer.Deserialize<ApiProblem>(await response.Content.ReadAsStringAsync(), Json)!;
 
     private static void Authorize(HttpClient client, string token) =>
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);

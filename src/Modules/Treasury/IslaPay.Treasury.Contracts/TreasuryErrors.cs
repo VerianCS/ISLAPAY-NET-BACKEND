@@ -26,20 +26,44 @@ public static class TreasuryErrors
 
     /// <summary>The account named in a path is not one the chart has.</summary>
     public const string UnknownAccount = "unknown_account";
+
+    /// <summary>No proposal has that id.</summary>
+    public const string ProposalNotFound = "proposal_not_found";
+
+    /// <summary>
+    /// The proposal was already approved, rejected, withdrawn or has expired.
+    /// <c>meta.status</c> says which.
+    /// </summary>
+    public const string ProposalNotPending = "proposal_not_pending";
+
+    /// <summary>
+    /// The caller proposed this and may not also approve or reject it.
+    /// </summary>
+    /// <remarks>
+    /// The whole point of a second person. Refused whatever roles the caller
+    /// holds, so a mis-granted pair of roles still cannot approve its own work.
+    /// </remarks>
+    public const string OwnProposal = "own_proposal";
+
+    /// <summary>Only whoever proposed something may withdraw it.</summary>
+    public const string NotYourProposal = "not_your_proposal";
 }
 
 /// <summary>A refusal the platform can translate without knowing this module.</summary>
 public sealed class TreasuryException : Exception, IApiFailure
 {
-    public TreasuryException(string code, int status, string message) : base(message)
+    public TreasuryException(
+        string code, int status, string message, IReadOnlyDictionary<string, object>? meta = null)
+        : base(message)
     {
         Code = code;
         Status = status;
+        Meta = meta;
     }
 
     public string Code { get; }
 
     public int Status { get; }
 
-    public IReadOnlyDictionary<string, object>? Meta => null;
+    public IReadOnlyDictionary<string, object>? Meta { get; }
 }

@@ -146,3 +146,45 @@ public sealed record CreditReceiptDto(
     string By,
     DateTimeOffset At,
     bool Applied);
+
+/// <summary>The states a proposal can be in.</summary>
+public static class TreasuryProposalStatuses
+{
+    public const string Pending = "pending";
+    public const string Approved = "approved";
+    public const string Rejected = "rejected";
+    public const string Withdrawn = "withdrawn";
+
+    /// <summary>Nobody decided within the proposal's lifetime; nothing moved.</summary>
+    public const string Expired = "expired";
+
+    public static readonly IReadOnlyList<string> All = [Pending, Approved, Rejected, Withdrawn, Expired];
+}
+
+/// <summary>
+/// Money that one person asked to move and a second has to agree to.
+/// </summary>
+/// <param name="Kind"><c>credit</c> for now: money in from a mirror account.</param>
+/// <param name="ProposedBy">The proposer's subject, from their token.</param>
+/// <param name="ProposedByName">Their user name as the token had it, for people to read.</param>
+/// <param name="PostingId">The ledger posting, once approved.</param>
+public sealed record TreasuryProposalDto(
+    Guid Id,
+    string Kind,
+    string Status,
+    string Destination,
+    Money Amount,
+    string Source,
+    string Reason,
+    string ProposedBy,
+    string? ProposedByName,
+    DateTimeOffset ProposedAt,
+    DateTimeOffset ExpiresAt,
+    string? DecidedBy,
+    string? DecidedByName,
+    DateTimeOffset? DecidedAt,
+    string? DecisionNote,
+    Guid? PostingId);
+
+/// <summary>Why a proposal was turned down. Required: a bare "no" teaches nobody anything.</summary>
+public sealed record TreasuryDecisionRequest(string? Note);

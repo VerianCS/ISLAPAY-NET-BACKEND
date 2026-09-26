@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using IslaPay.Platform.AspNet;
+using IslaPay.Platform.Data;
 
 namespace IslaPay.Treasury;
 
@@ -10,11 +11,12 @@ namespace IslaPay.Treasury;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The only module with no schema of its own, and that is the design rather
-/// than an omission. A treasury that kept its own figures would be a second
-/// set of books, and the second set is always the one that is wrong. It reads
-/// the ledger, asks each context with escrow what it is holding, and writes
-/// exactly one kind of posting.
+/// It keeps no figures of its own, and that is the design rather than an
+/// omission. A treasury that kept its own balances would be a second set of
+/// books, and the second set is always the one that is wrong. It reads the
+/// ledger, asks each context with escrow what it is holding, and writes exactly
+/// one kind of posting — after two people have agreed to it. Its one table
+/// holds those agreements in progress, never a balance.
 /// </para>
 /// <para>
 /// It is registered last, after every module that implements
@@ -32,6 +34,14 @@ public sealed class TreasuryModule : IIslaPayModule
         ArgumentNullException.ThrowIfNull(builder);
 
         builder.Services.AddScoped<TreasuryService>();
+        builder.Services.AddScoped<TreasuryProposals>();
+
+        // Its first table: proposals waiting for a second person. Requests,
+        // not balances — the figures stay in the ledger.
+        builder.Services.AddSingleton(new MigrationSet(
+            Module: "treasury",
+            Assembly: typeof(TreasuryModule).Assembly,
+            ResourcePrefix: "IslaPay.Treasury.Migrations."));
     }
 
     public void MapEndpoints(IEndpointRouteBuilder routes) => routes.MapTreasury();

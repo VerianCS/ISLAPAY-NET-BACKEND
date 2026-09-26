@@ -11,10 +11,10 @@ namespace IslaPay.Treasury.Tests;
 /// A throwaway database with the ledger's schema, and a treasury over it.
 /// </summary>
 /// <remarks>
-/// The treasury owns no schema of its own — it reads the ledger's — so there
-/// is nothing else to migrate. What varies between tests is which escrow
-/// reporters are present, which is the only thing the reconciliation depends
-/// on besides the book itself.
+/// The treasury keeps no balances of its own — it reads the ledger's — and its
+/// one table holds proposals waiting for a second person. What varies between
+/// tests is which escrow reporters are present, which is the only thing the
+/// reconciliation depends on besides the book itself.
 /// </remarks>
 public sealed class TreasuryFixture : PostgresFixture
 {
@@ -24,12 +24,22 @@ public sealed class TreasuryFixture : PostgresFixture
             new MigrationSet("ledger", typeof(LedgerModule).Assembly, "IslaPay.Ledger.Migrations."),
             new MigrationSet("messaging", typeof(Outbox).Assembly,
                 "IslaPay.Platform.Messaging.Migrations."),
+            new MigrationSet("platform", typeof(IdempotencyStore).Assembly,
+                "IslaPay.Platform.AspNet.Migrations."),
+            new MigrationSet("treasury", typeof(TreasuryModule).Assembly, "IslaPay.Treasury.Migrations."),
         ]);
 
     public PostgresLedger Ledger() => new(Database, new Outbox(Database), new TestCatalog());
 
     public TreasuryService Treasury(params IEscrowReporter[] reporters) =>
         new(Ledger(), new TestCatalog(), reporters, TimeProvider.System);
+
+    public TreasuryProposals Proposals(TimeProvider? clock = null) =>
+        new(Database, Treasury(), new TestCatalog(),
+            new IslaPay.Platform.AspNet.Security.AuditLog(
+                Database, clock ?? TimeProvider.System,
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<IslaPay.Platform.AspNet.Security.AuditLog>.Instance),
+            clock ?? TimeProvider.System);
 }
 
 [CollectionDefinition(Name)]

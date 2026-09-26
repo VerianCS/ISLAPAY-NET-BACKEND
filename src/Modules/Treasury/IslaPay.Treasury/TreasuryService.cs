@@ -213,11 +213,65 @@ public sealed partial class TreasuryService
         string by,
         CreditRequest request,
         string idempotencyKey,
+        string? approvedBy = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentException.ThrowIfNullOrWhiteSpace(by);
         ArgumentException.ThrowIfNullOrWhiteSpace(idempotencyKey);
+
+        var (destination, amount, source, reason) = Validate(request);
+        var currency = amount.Currency;
+
+        var into = destination == "float"
+            ? AccountRef.CashFloat(currency)
+            : AccountRef.SettlementFund(currency);
+        var at = _clock.GetUtcNow();
+
+        var receipt = await _ledger.PostAsync(
+            new PostingRequest(
+                Kind: "funding",
+                Legs:
+                [
+                    new PostingLeg(into, amount),
+                    // Negative by definition: the mirror is what IslaPay holds
+                    // outside, and this money has just stopped being there.
+                    new PostingLeg(AccountRef.External(source, currency), -amount),
+                ],
+                // Scoped, because the ledger's key is unique across the whole
+                // book: a bare operator-chosen key could collide with one a
+                // client picked, and the loser would be told it succeeded while
+                // nothing moved.
+                IdempotencyKey: $"treasury:credit:{idempotencyKey}",
+                Metadata: new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["source"] = source,
+                    ["reason"] = reason,
+                    ["by"] = by,
+                    ["destination"] = destination,
+                    ["at"] = at.ToString("O", CultureInfo.InvariantCulture),
+                    // Who agreed to it, when it went through a second person.
+                    ["approved_by"] = approvedBy ?? "",
+                }),
+            cancellationToken).ConfigureAwait(false);
+
+        var after = await _ledger.BalanceOfAsync(into, cancellationToken).ConfigureAwait(false);
+
+        return new CreditReceiptDto(
+            receipt.PostingId, destination, amount, after, source, reason, by, at, receipt.Written);
+    }
+
+    /// <summary>
+    /// A credit as it will be posted, or the reason it cannot be.
+    /// </summary>
+    /// <remarks>
+    /// Run when a credit is proposed, so the approver is never shown something
+    /// that could not happen, and again when it is approved, because a
+    /// currency can be switched off in between.
+    /// </remarks>
+    internal (string Destination, Money Amount, string Source, string Reason) Validate(CreditRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
 
         var destination = (request.Destination ?? string.Empty).Trim().ToLowerInvariant();
         if (!CreditableDestinations.Contains(destination, StringComparer.Ordinal))
@@ -257,42 +311,7 @@ public sealed partial class TreasuryService
         // been switched off, even though one that was switched off after the
         // fact can still be reported on.
         var currency = _catalog.Require(request.Amount.Currency.Code);
-        var amount = Money.FromMinorUnits(request.Amount.MinorUnits, currency);
-
-        var into = destination == "float"
-            ? AccountRef.CashFloat(currency)
-            : AccountRef.SettlementFund(currency);
-        var at = _clock.GetUtcNow();
-
-        var receipt = await _ledger.PostAsync(
-            new PostingRequest(
-                Kind: "funding",
-                Legs:
-                [
-                    new PostingLeg(into, amount),
-                    // Negative by definition: the mirror is what IslaPay holds
-                    // outside, and this money has just stopped being there.
-                    new PostingLeg(AccountRef.External(source, currency), -amount),
-                ],
-                // Scoped, because the ledger's key is unique across the whole
-                // book: a bare operator-chosen key could collide with one a
-                // client picked, and the loser would be told it succeeded while
-                // nothing moved.
-                IdempotencyKey: $"treasury:credit:{idempotencyKey}",
-                Metadata: new Dictionary<string, string>(StringComparer.Ordinal)
-                {
-                    ["source"] = source,
-                    ["reason"] = reason,
-                    ["by"] = by,
-                    ["destination"] = destination,
-                    ["at"] = at.ToString("O", CultureInfo.InvariantCulture),
-                }),
-            cancellationToken).ConfigureAwait(false);
-
-        var after = await _ledger.BalanceOfAsync(into, cancellationToken).ConfigureAwait(false);
-
-        return new CreditReceiptDto(
-            receipt.PostingId, destination, amount, after, source, reason, by, at, receipt.Written);
+        return (destination, Money.FromMinorUnits(request.Amount.MinorUnits, currency), source, reason);
     }
 
     /// <summary>The chart of accounts' own name for a platform account.</summary>

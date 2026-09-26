@@ -1,6 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <EmbeddedResource Include="Migrations\**\*.sql" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\IslaPay.Treasury.Contracts\IslaPay.Treasury.Contracts.csproj" />
     <!--
       Two modules, both through their .Contracts: the ledger holds the money

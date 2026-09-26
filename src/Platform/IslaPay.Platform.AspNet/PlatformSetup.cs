@@ -270,11 +270,15 @@ public static class PlatformSetup
                             StatusCodes.Status401Unauthorized,
                             context.ErrorDescription ?? "A valid bearer token is required.");
                     },
-                    OnForbidden = context => ProblemResults.WriteAsync(
-                        context.HttpContext,
-                        PlatformErrors.Forbidden,
-                        StatusCodes.Status403Forbidden,
-                        "The token does not permit this."),
+                    OnForbidden = async context =>
+                    {
+                        await PermissionAuthorization.RecordDenialAsync(context.HttpContext);
+                        await ProblemResults.WriteAsync(
+                            context.HttpContext,
+                            PlatformErrors.Forbidden,
+                            StatusCodes.Status403Forbidden,
+                            "The token does not permit this.");
+                    },
                 };
             });
 

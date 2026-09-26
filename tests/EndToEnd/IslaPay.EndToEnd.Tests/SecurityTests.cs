@@ -4,11 +4,14 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using IslaPay.Identity.Contracts;
 using IslaPay.P2P.Contracts;
+using IslaPay.Platform.Api;
 using IslaPay.Platform.AspNet.Security;
+using IslaPay.Platform.Data;
 using IslaPay.Platform.Serialization;
 using IslaPay.TestSupport;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
+using Npgsql;
 
 namespace IslaPay.EndToEnd.Tests;
 
@@ -199,6 +202,89 @@ public class SecurityTests
         using var client = Client(host, operador);
         Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync(
             new Uri("/v1/admin/p2p/queue", UriKind.Relative))).StatusCode);
+    }
+
+    [SkippableFact]
+    public async Task What_staff_change_and_what_they_are_refused_is_in_the_audit_log()
+    {
+        Skip.IfNot(_fixture.Available, "No Keycloak or no Postgres reachable.");
+
+        await using var host = _fixture.Build();
+        var manager = await StaffAsync(host, StaffRoles.P2PManager);
+        var auditor = await StaffAsync(host, StaffRoles.Auditor);
+
+        using (var client = Client(host, manager))
+        {
+            // One change that runs and one the role does not allow.
+            var instructions = await client.PutAsJsonAsync(
+                "/v1/admin/p2p/methods/cup/instructions",
+                new P2PInstructionsUpdate("Transfermóvil al 9205 1299 0000 1234"), Json);
+            Assert.Equal(HttpStatusCode.NoContent, instructions.StatusCode);
+
+            using var settle = new HttpRequestMessage(
+                HttpMethod.Post, new Uri($"/v1/admin/p2p/trades/{Guid.NewGuid()}/paid", UriKind.Relative))
+            {
+                Content = JsonContent.Create(new P2PSettleRequest("TM-1"), options: Json),
+            };
+            settle.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString("N"));
+            Assert.Equal(HttpStatusCode.Forbidden, (await client.SendAsync(settle)).StatusCode);
+
+            // Only an auditor's kind of role reads the log.
+            Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync(
+                new Uri("/v1/admin/audit", UriKind.Relative))).StatusCode);
+        }
+
+        using var reader = Client(host, auditor);
+        var page = (await reader.GetFromJsonAsync<CursorPage<AuditEntryDto>>(
+            $"/v1/admin/audit?actor={Uri.EscapeDataString(manager.UserId)}&limit=10", Json))!;
+
+        var changed = Assert.Single(page.Items, e => e.Kind == "route");
+        Assert.Equal("PUT /v1/admin/p2p/methods/{id}/instructions", changed.Action);
+        Assert.Equal(Permissions.P2PManage, changed.Permission);
+        Assert.Equal("ok", changed.Outcome);
+        Assert.Equal("cup", changed.Details["id"]);
+        Assert.Equal(manager.Email, changed.ActorName);
+
+        Assert.Equal(2, page.Items.Count(e => e.Kind == "denied"));
+        Assert.Contains(page.Items, e => e.Kind == "denied" && e.Permission == Permissions.P2PSettle);
+    }
+
+    [SkippableFact]
+    public async Task The_audit_log_is_a_chain_and_refuses_to_be_edited()
+    {
+        Skip.IfNot(_fixture.Available, "No Keycloak or no Postgres reachable.");
+
+        await using var host = _fixture.Build();
+        var manager = await StaffAsync(host, StaffRoles.P2PManager);
+        using (var client = Client(host, manager))
+        {
+            await client.PutAsJsonAsync(
+                "/v1/admin/p2p/methods/cup/instructions", new P2PInstructionsUpdate("Uno"), Json);
+            await client.PutAsJsonAsync(
+                "/v1/admin/p2p/methods/cup/instructions", new P2PInstructionsUpdate("Dos"), Json);
+        }
+
+        var database = host.Services.GetRequiredService<IDatabase>();
+        await using var connection = await database.OpenAsync();
+
+        // Each row names the one before it.
+        await using (var chain = new NpgsqlCommand(
+            "SELECT count(*) FROM platform.audit_log a "
+            + "JOIN platform.audit_log b ON b.seq = "
+            + "(SELECT max(seq) FROM platform.audit_log WHERE seq < a.seq) "
+            + "WHERE a.prev_hash <> b.hash;", connection))
+        {
+            Assert.Equal(0L, (long)(await chain.ExecuteScalarAsync())!);
+        }
+
+        await using var edit = new NpgsqlCommand(
+            "UPDATE platform.audit_log SET outcome = 'ok' "
+            + "WHERE seq = (SELECT max(seq) FROM platform.audit_log);", connection);
+        var refused = await Assert.ThrowsAsync<PostgresException>(() => edit.ExecuteNonQueryAsync());
+        Assert.Contains("append-only", refused.MessageText, StringComparison.Ordinal);
+
+        await using var delete = new NpgsqlCommand("DELETE FROM platform.audit_log;", connection);
+        await Assert.ThrowsAsync<PostgresException>(() => delete.ExecuteNonQueryAsync());
     }
 
     // ---------------------------------------------------------------- helpers

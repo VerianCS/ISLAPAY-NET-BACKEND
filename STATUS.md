@@ -429,8 +429,9 @@ It publishes `deposit.credited.v1`. **Nothing consumes it.**
 
 ## Treasury — works, and is the console's whole backend for now
 
-Four routes, all under `/v1/admin/treasury`. The three that read need
-`treasury.read`; the credit needs `treasury.propose` (`treasury-operator`):
+All under `/v1/admin/treasury`. Reading needs `treasury.read`; a credit is
+proposed with `treasury.propose` (`treasury-operator`) and posted only when
+somebody else approves it with `treasury.approve` (`treasury-approver`):
 
 - `GET /balances` — every account IslaPay holds in its own name: fees, the
   settlement fund, escrow, the float, and the mirrors of what is held outside.
@@ -440,10 +441,19 @@ Four routes, all under `/v1/admin/treasury`. The three that read need
   modules say it should be, per currency, with the per-context breakdown.
 - `GET /accounts/{owner}/{currency}/entries` — one account's history, newest
   first. Mirrors are reached as `external:tron`, `external:bank:bandec`.
-- `POST /credits` — the one door money enters by. Requires an
+- `POST /credits` — the one door money enters by, and now only a proposal:
+  it answers `201` with a `TreasuryProposalDto` and moves nothing. Requires an
   `Idempotency-Key`, a destination (`float` or `settlement_fund` — not escrow,
-  not fees), a source mirror and a reason; the author comes from the token and
-  never from the body.
+  not fees), a source mirror and a reason, all checked when proposed and again
+  when approved; the author comes from the token and never from the body.
+- `GET /proposals?status=`, `GET /proposals/{id}` — what is waiting and what
+  was decided.
+- `POST /proposals/{id}/approve` — posts the credit. Refused to whoever
+  proposed it (`own_proposal`), whatever roles they hold; idempotent, and the
+  posting is keyed by the proposal, so a retry never posts twice. The ledger
+  entry carries `by` (proposer) and `approved_by`.
+- `POST /proposals/{id}/reject` (with a note), `POST /proposals/{id}/withdraw`
+  (proposer only). A proposal nobody decides expires after 24 hours.
 
 **Owns no schema and no money**, which is the design rather than an omission.
 A treasury that kept its own figures would be a second set of books, and the
@@ -506,6 +516,14 @@ and tested in one place.
 - Keycloak's `realm_access` is read in one place, the Identity module
   (`RealmRoleClaims`), instead of three copies in three modules.
 - An end-to-end test fails if any `/v1/admin` route lacks a permission.
+- **Audit log** (`platform.audit_log`). Every non-GET call to a route behind a
+  permission is recorded however it ends — who, which permission, the route,
+  its ids, the status — because `RequirePermission` attaches the filter that
+  writes it; a route cannot be protected without being audited. Refusals of
+  those routes are recorded too. Treasury adds its own rows for proposals
+  (amount, destination, proposer). Append-only by trigger (UPDATE, DELETE and
+  TRUNCATE raise), and hash-chained: each row's hash covers the previous one.
+  Read with `GET /v1/admin/audit?actor=&action=&cursor=` (`audit.read`).
 - `tools/provision-realm.py` creates the nine roles, turns on brute-force
   protection and names the sign-in steps so `amr` is written.
 

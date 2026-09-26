@@ -1,4 +1,3 @@
-using System.Security.Claims;
 using IslaPay.Platform.Api;
 using IslaPay.Platform.AspNet;
 using IslaPay.Platform.AspNet.Security;
@@ -16,8 +15,9 @@ namespace IslaPay.Treasury;
 /// <para>
 /// Every route here is under <c>/v1/admin/treasury</c>. Reading needs
 /// <see cref="Permissions.TreasuryRead"/>; the one route that moves money
-/// needs <see cref="Permissions.TreasuryPropose"/>. None of them is reachable
-/// by a customer's token, and none of them takes a user id: this module answers questions about the house, and a route that
+/// needs <see cref="Permissions.TreasuryPropose"/> to be asked for and
+/// <see cref="Permissions.TreasuryApprove"/>, held by somebody else, to happen.
+/// None of them is reachable by a customer's token, and none of them takes a user id: this module answers questions about the house, and a route that
 /// could also read a person's history would be a way to read anybody's with a
 /// role granted for something else.
 /// </para>
@@ -56,24 +56,53 @@ public static class TreasuryEndpoints
                 .EntriesAsync(owner, currency, limit ?? 50, cursor, ct).ConfigureAwait(false)))
             .RequirePermission(Permissions.TreasuryRead);
 
+        // Proposes; moves nothing. The money moves when somebody else
+        // approves, below. Created, not OK: what exists now is a proposal.
         admin.MapPost("/credits", async (
-            CreditRequest request, ClaimsPrincipal caller, HttpContext context,
-            TreasuryService treasury, CancellationToken ct) =>
-            TypedResults.Ok(await treasury.CreditAsync(
-                SubjectOf(caller), request, KeyOf(context), ct).ConfigureAwait(false)))
+            CreditRequest request, HttpContext context,
+            TreasuryProposals proposals, CancellationToken ct) =>
+        {
+            var proposal = await proposals
+                .ProposeCreditAsync(context, request, KeyOf(context), ct).ConfigureAwait(false);
+            return TypedResults.Created($"/v1/admin/treasury/proposals/{proposal.Id}", proposal);
+        })
             .RequirePermission(Permissions.TreasuryPropose)
             .WithMetadata(new IdempotentAttribute());
 
+        admin.MapGet("/proposals", async (
+            string? status, int? limit, TreasuryProposals proposals, CancellationToken ct) =>
+            TypedResults.Ok(await proposals.ListAsync(status, limit ?? 50, ct).ConfigureAwait(false)))
+            .RequirePermission(Permissions.TreasuryRead);
+
+        admin.MapGet("/proposals/{id:guid}", async (
+            Guid id, TreasuryProposals proposals, CancellationToken ct) =>
+            TypedResults.Ok(await proposals.GetAsync(id, ct).ConfigureAwait(false)))
+            .RequirePermission(Permissions.TreasuryRead);
+
+        // Idempotent like the credit it posts: an approver on a bad connection
+        // is exactly who presses twice.
+        admin.MapPost("/proposals/{id:guid}/approve", async (
+            Guid id, TreasuryDecisionRequest? decision, HttpContext context,
+            TreasuryProposals proposals, CancellationToken ct) =>
+            TypedResults.Ok(await proposals
+                .ApproveAsync(context, id, decision?.Note, ct).ConfigureAwait(false)))
+            .RequirePermission(Permissions.TreasuryApprove)
+            .WithMetadata(new IdempotentAttribute());
+
+        admin.MapPost("/proposals/{id:guid}/reject", async (
+            Guid id, TreasuryDecisionRequest decision, HttpContext context,
+            TreasuryProposals proposals, CancellationToken ct) =>
+            TypedResults.Ok(await proposals
+                .RejectAsync(context, id, decision.Note, ct).ConfigureAwait(false)))
+            .RequirePermission(Permissions.TreasuryApprove);
+
+        admin.MapPost("/proposals/{id:guid}/withdraw", async (
+            Guid id, HttpContext context, TreasuryProposals proposals, CancellationToken ct) =>
+            TypedResults.Ok(await proposals.WithdrawAsync(context, id, ct).ConfigureAwait(false)))
+            .RequirePermission(Permissions.TreasuryPropose);
+
         return routes;
     }
-
-    /// <summary>Who is asking, taken from the validated token and never from the body.</summary>
-    private static string SubjectOf(ClaimsPrincipal caller) =>
-        caller.FindFirstValue(ClaimTypes.NameIdentifier)
-        ?? caller.FindFirstValue("sub")
-        ?? throw new TreasuryException(
-            PlatformErrors.TokenInvalid, StatusCodes.Status401Unauthorized,
-            "The token carries no subject.");
 
     /// <summary>
     /// The key the caller sent, which the middleware has already required.

@@ -51,6 +51,7 @@ public static class PermissionAuthorization
     {
         services.AddSingleton(options);
         services.AddSingleton<IAuthorizationHandler, PermissionHandler>();
+        services.AddSingleton<IAuditLog, AuditLog>();
 
         var builder = services.AddAuthorizationBuilder();
         foreach (var permission in Permissions.All)
@@ -62,7 +63,8 @@ public static class PermissionAuthorization
     }
 
     /// <summary>
-    /// Requires a signed-in caller holding <paramref name="permission"/>.
+    /// Requires a signed-in caller holding <paramref name="permission"/>, and
+    /// records in the audit log every call that is not a read.
     /// </summary>
     public static TBuilder RequirePermission<TBuilder>(this TBuilder builder, string permission)
         where TBuilder : IEndpointConventionBuilder
@@ -77,7 +79,8 @@ public static class PermissionAuthorization
 
         return builder
             .RequireAuthorization(Permissions.PolicyFor(permission))
-            .WithMetadata(new PermissionMetadata(permission));
+            .WithMetadata(new PermissionMetadata(permission))
+            .AddEndpointFilter(new AuditFilter(permission));
     }
 
     /// <summary>
@@ -88,9 +91,35 @@ public static class PermissionAuthorization
     /// it would otherwise have to keep in step with the table above. It is a
     /// convenience and nothing more: every route checks for itself.
     /// </remarks>
-    internal static void MapStaffAccess(IEndpointRouteBuilder routes) =>
+    internal static void MapStaffAccess(IEndpointRouteBuilder routes)
+    {
         routes.MapGet("/v1/me/permissions", (ClaimsPrincipal caller, StaffSecurityOptions options) =>
                 TypedResults.Ok(StaffRoles.AccessOf(caller, options.RequireMultiFactor)))
             .RequireAuthorization()
             .WithTags("Security");
+
+        AuditLog.MapAudit(routes);
+    }
+
+    /// <summary>
+    /// Records a refusal of a route that needs a permission.
+    /// </summary>
+    /// <remarks>
+    /// A customer's token probing <c>/v1/admin</c>, or a member of staff
+    /// reaching past their role, is exactly what somebody reviewing the log
+    /// wants to see — and the one thing the route itself never hears about,
+    /// because it never runs.
+    /// </remarks>
+    internal static async Task RecordDenialAsync(HttpContext context)
+    {
+        var permission = context.GetEndpoint()?.Metadata.GetMetadata<PermissionMetadata>();
+        if (permission is null) return;
+
+        var audit = context.RequestServices.GetRequiredService<IAuditLog>();
+        var action = $"{context.Request.Method} "
+            + $"{(context.GetEndpoint() as RouteEndpoint)?.RoutePattern.RawText ?? context.Request.Path}";
+        await audit.RecordAsync(context, new AuditRecord(
+            "denied", action, "denied", permission.Permission, context.Request.Path.Value,
+            StatusCodes.Status403Forbidden), context.RequestAborted).ConfigureAwait(false);
+    }
 }
