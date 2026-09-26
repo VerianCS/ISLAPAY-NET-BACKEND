@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using IslaPay.Platform.Api;
 using IslaPay.Platform.AspNet;
+using IslaPay.Platform.AspNet.Security;
 using IslaPay.Treasury.Contracts;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -13,9 +14,10 @@ namespace IslaPay.Treasury;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Every route here is under <c>/v1/admin/treasury</c> and behind one role.
-/// None of them is reachable by a customer's token, and none of them takes a
-/// user id: this module answers questions about the house, and a route that
+/// Every route here is under <c>/v1/admin/treasury</c>. Reading needs
+/// <see cref="Permissions.TreasuryRead"/>; the one route that moves money
+/// needs <see cref="Permissions.TreasuryPropose"/>. None of them is reachable
+/// by a customer's token, and none of them takes a user id: this module answers questions about the house, and a route that
 /// could also read a person's history would be a way to read anybody's with a
 /// role granted for something else.
 /// </para>
@@ -28,21 +30,21 @@ namespace IslaPay.Treasury;
 /// </remarks>
 public static class TreasuryEndpoints
 {
-    public const string AdminPolicy = "treasury-admin";
-
     public static IEndpointRouteBuilder MapTreasury(this IEndpointRouteBuilder routes)
     {
         ArgumentNullException.ThrowIfNull(routes);
 
         var admin = routes.MapGroup("/v1/admin/treasury")
             .WithTags("Treasury")
-            .RequireAuthorization(AdminPolicy);
+            .RequireAuthorization();
 
         admin.MapGet("/balances", async (TreasuryService treasury, CancellationToken ct) =>
-            TypedResults.Ok(await treasury.BalancesAsync(ct).ConfigureAwait(false)));
+            TypedResults.Ok(await treasury.BalancesAsync(ct).ConfigureAwait(false)))
+            .RequirePermission(Permissions.TreasuryRead);
 
         admin.MapGet("/reconciliation", async (TreasuryService treasury, CancellationToken ct) =>
-            TypedResults.Ok(await treasury.ReconciliationAsync(ct).ConfigureAwait(false)));
+            TypedResults.Ok(await treasury.ReconciliationAsync(ct).ConfigureAwait(false)))
+            .RequirePermission(Permissions.TreasuryRead);
 
         // The mirror accounts are reached as external:tron, external:bank:bandec.
         // A colon in a path segment is legal and needs no escaping, which keeps
@@ -51,13 +53,15 @@ public static class TreasuryEndpoints
             string owner, string currency, int? limit, string? cursor,
             TreasuryService treasury, CancellationToken ct) =>
             TypedResults.Ok(await treasury
-                .EntriesAsync(owner, currency, limit ?? 50, cursor, ct).ConfigureAwait(false)));
+                .EntriesAsync(owner, currency, limit ?? 50, cursor, ct).ConfigureAwait(false)))
+            .RequirePermission(Permissions.TreasuryRead);
 
         admin.MapPost("/credits", async (
             CreditRequest request, ClaimsPrincipal caller, HttpContext context,
             TreasuryService treasury, CancellationToken ct) =>
             TypedResults.Ok(await treasury.CreditAsync(
                 SubjectOf(caller), request, KeyOf(context), ct).ConfigureAwait(false)))
+            .RequirePermission(Permissions.TreasuryPropose)
             .WithMetadata(new IdempotentAttribute());
 
         return routes;

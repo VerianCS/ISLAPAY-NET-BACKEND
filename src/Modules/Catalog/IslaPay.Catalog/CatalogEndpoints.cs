@@ -1,5 +1,6 @@
 using IslaPay.Catalog.Contracts;
 using IslaPay.Platform.Api;
+using IslaPay.Platform.AspNet.Security;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -18,8 +19,6 @@ namespace IslaPay.Catalog;
 /// </remarks>
 public static class CatalogEndpoints
 {
-    public const string AdminPolicy = "catalog-admin";
-
     public static IEndpointRouteBuilder MapCatalog(this IEndpointRouteBuilder routes)
     {
         ArgumentNullException.ThrowIfNull(routes);
@@ -58,7 +57,7 @@ public static class CatalogEndpoints
 
         var admin = routes.MapGroup("/v1/admin/catalog")
             .WithTags("Catalog")
-            .RequireAuthorization(AdminPolicy);
+            .RequirePermission(Permissions.CatalogManage);
 
         // Everything, switched on or not: deciding what to switch on requires
         // seeing what is switched off.

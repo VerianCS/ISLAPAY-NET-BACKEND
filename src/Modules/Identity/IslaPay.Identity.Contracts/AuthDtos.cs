@@ -69,8 +69,17 @@ public sealed record AuthSessionResponse(TokenPair Tokens, UserDto User);
 /// requirement, this endpoint is replaced by authorization code with PKCE and
 /// a system browser, and the screens go with it.
 /// </para>
+/// <para>
+/// A second factor does work through it, as a field: the six digits from an
+/// authenticator app, sent with the password. Staff need one; a customer who
+/// has not set one up leaves it out.
+/// </para>
 /// </remarks>
-public sealed record LoginRequest(string Email, string Password);
+/// <param name="Code">
+/// The current code from the person's authenticator app, if they have one.
+/// Without it such an account is refused exactly as a wrong password is.
+/// </param>
+public sealed record LoginRequest(string Email, string Password, string? Code = null);
 
 /// <summary><c>POST /v1/auth/register</c>.</summary>
 /// <param name="Phone">

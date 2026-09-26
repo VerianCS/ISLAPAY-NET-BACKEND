@@ -1,6 +1,7 @@
 using System.Text.Json;
 using IslaPay.Platform.Api;
 using IslaPay.Platform.Data;
+using IslaPay.Platform.AspNet.Security;
 using IslaPay.Platform.Messaging;
 using IslaPay.Platform.Serialization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -212,6 +213,7 @@ public static class PlatformSetup
         });
 
         MapHealth(app);
+        PermissionAuthorization.MapStaffAccess(app);
 
         foreach (var module in app.Services.GetServices<IIslaPayModule>())
             module.MapEndpoints(app);
@@ -277,6 +279,12 @@ public static class PlatformSetup
             });
 
         builder.Services.AddAuthorization();
+
+        // Routes ask for permissions, and the map from the roles in a token to
+        // those permissions is the platform's, so it is one table.
+        var security = builder.Configuration.GetSection("Security").Get<StaffSecurityOptions>()
+            ?? new StaffSecurityOptions();
+        builder.Services.AddPermissionPolicies(security);
     }
 
     /// <summary>

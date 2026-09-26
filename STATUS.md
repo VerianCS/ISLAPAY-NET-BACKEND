@@ -344,8 +344,10 @@ where it was going, so the operator had a name and nothing to pay into.
 its reference. The column existed from the start with nothing able to write
 it, so until that route every buy told the buyer to pay and not where.
 
-**Not real yet:** the operator console is being built on these endpoints,
-which sit behind a `p2p-operator` realm role. There is no Transfermóvil
+**Who may do what:** reading the queue and searching needs `p2p.read`;
+paid, received and failed need `p2p.settle` (the `p2p-operator` role); prices,
+methods, limits, instructions and on/off need `p2p.manage` (`p2p-manager`).
+See *Staff roles and permissions* below. There is no Transfermóvil
 integration — a person does it by hand and types the bank's reference back in.
 The desk's CUP is funded through Treasury
 (`POST /v1/admin/treasury/credits` into `settlement_fund`), like any other
@@ -427,8 +429,8 @@ It publishes `deposit.credited.v1`. **Nothing consumes it.**
 
 ## Treasury — works, and is the console's whole backend for now
 
-Four routes, all under `/v1/admin/treasury` and all behind one realm role,
-`treasury-admin`:
+Four routes, all under `/v1/admin/treasury`. The three that read need
+`treasury.read`; the credit needs `treasury.propose` (`treasury-operator`):
 
 - `GET /balances` — every account IslaPay holds in its own name: fees, the
   settlement fund, escrow, the float, and the mirrors of what is held outside.
@@ -470,6 +472,46 @@ The 16 module tests run against a real Postgres, and 5 end-to-end tests run
 against the host — including one that reconciles escrow against a hold placed
 by a real buyer on a real listing, so what is being compared is a module's
 reporter and the ledger's balance rather than two numbers a test wrote.
+
+---
+
+## Staff roles and permissions — works
+
+Routes ask for a **permission**; a **role** is a job, granted in Keycloak,
+that carries a set of them. The whole table is one file,
+`Platform.AspNet/Security/StaffRoles.cs`, so separation of duties can be read
+and tested in one place.
+
+| Role | Permissions |
+|---|---|
+| `support` | `support.read`, `p2p.read` |
+| `p2p-operator` | `p2p.read`, `p2p.settle` |
+| `p2p-manager` | `p2p.read`, `p2p.manage` |
+| `treasury-operator` | `treasury.read`, `treasury.propose` |
+| `treasury-approver` | `treasury.read`, `treasury.approve` |
+| `compliance` | `support.read`, `compliance.read`, `compliance.act`, `audit.read` |
+| `catalog-admin` | `catalog.manage` |
+| `security-admin` | `security.manage`, `audit.read` |
+| `auditor` | every `.read`, nothing else |
+
+- **Conflicts.** `treasury-operator` + `treasury-approver`, and
+  `security-admin` with any role that moves money. A token carrying both halves
+  of a pair gets neither half's permissions, and says so.
+- **Second factor.** With `Security:RequireMultiFactor` (on by default, off in
+  Development) a staff role counts only when the token's `amr` says `otp`.
+  `POST /v1/auth/login` takes an optional `code` for this.
+- **`GET /v1/me/permissions`** — roles, permissions, conflicts and whether a
+  second factor is missing. The console draws its navigation from it; every
+  route still checks for itself.
+- Keycloak's `realm_access` is read in one place, the Identity module
+  (`RealmRoleClaims`), instead of three copies in three modules.
+- An end-to-end test fails if any `/v1/admin` route lacks a permission.
+- `tools/provision-realm.py` creates the nine roles, turns on brute-force
+  protection and names the sign-in steps so `amr` is written.
+
+`treasury-admin` is gone: it was one role that could both fund the float and
+check it. Whoever held it needs `treasury-operator` now, and the credit becomes
+a proposal someone else approves when approvals land.
 
 ---
 

@@ -59,6 +59,7 @@
   </Folder>
   <Folder Name="/tests/Platform/">
     <Project Path="tests/Platform/IslaPay.Platform.Api.Tests/IslaPay.Platform.Api.Tests.csproj" />
+    <Project Path="tests/Platform/IslaPay.Platform.AspNet.Tests/IslaPay.Platform.AspNet.Tests.csproj" />
     <Project Path="tests/Platform/IslaPay.Platform.Messaging.Tests/IslaPay.Platform.Messaging.Tests.csproj" />
     <Project Path="tests/Platform/IslaPay.Platform.Money.Tests/IslaPay.Platform.Money.Tests.csproj" />
   </Folder>

@@ -86,6 +86,7 @@ public sealed class KeycloakFixture : IAsyncLifetime, IDisposable
         await CreateRealmAsync();
         await ConfigureUserProfileAsync();
         await CreateAppClientAsync();
+        await NameTheSignInStepsAsync();
         await CreateStrangerClientAsync();
         await CreateAdminClientAsync();
         Available = true;
@@ -243,11 +244,144 @@ public sealed class KeycloakFixture : IAsyncLifetime, IDisposable
                         ["id.token.claim"] = "false",
                     },
                 },
+                // How the person signed in, so the API can tell a password
+                // from a password and a code. As tools/provision-realm.py does.
+                new
+                {
+                    name = "amr",
+                    protocol = "openid-connect",
+                    protocolMapper = "oidc-amr-mapper",
+                    config = new Dictionary<string, string>
+                    {
+                        ["access.token.claim"] = "true",
+                        ["id.token.claim"] = "false",
+                    },
+                },
             },
         });
 
         using var response = await _http.SendAsync(request);
         await Expect(response, HttpStatusCode.Created, "create the app client");
+    }
+
+    /// <summary>
+    /// Gives the direct-grant steps the names the <c>amr</c> claim reports.
+    /// </summary>
+    /// <remarks>
+    /// Without a reference a step is performed and never mentioned, and the
+    /// token says nothing about how anybody signed in.
+    /// </remarks>
+    private async Task NameTheSignInStepsAsync()
+    {
+        using var read = Authorized(
+            HttpMethod.Get, $"{Authority}/admin/realms/{Realm}/authentication/flows/direct%20grant/executions");
+        using var found = await _http.SendAsync(read);
+        found.EnsureSuccessStatusCode();
+
+        var references = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["direct-grant-validate-password"] = "pwd",
+            ["direct-grant-validate-otp"] = "otp",
+        };
+
+        foreach (var step in (await found.Content.ReadFromJsonAsync<JsonElement>()).EnumerateArray())
+        {
+            if (!step.TryGetProperty("providerId", out var provider)
+                || !references.TryGetValue(provider.GetString() ?? "", out var reference))
+            {
+                continue;
+            }
+
+            using var configure = Authorized(
+                HttpMethod.Post,
+                $"{Authority}/admin/realms/{Realm}/authentication/executions/{step.GetProperty("id").GetString()}/config");
+            configure.Content = JsonContent.Create(new
+            {
+                alias = $"amr-{reference}",
+                config = new Dictionary<string, string> { ["default.reference.value"] = reference },
+            });
+            using var configured = await _http.SendAsync(configure);
+            await Expect(configured, HttpStatusCode.Created, $"name the {reference} step");
+        }
+    }
+
+    /// <summary>
+    /// A member of staff with a password and an authenticator app, and the
+    /// app's secret so a test can compute the codes it would show.
+    /// </summary>
+    /// <remarks>
+    /// Imported rather than registered: Keycloak's admin API cannot add an
+    /// authenticator to an existing user, because in real life the person
+    /// scans a QR code. An import is the one door that takes the secret.
+    /// </remarks>
+    public async Task<(string UserId, byte[] Secret)> StaffWithAuthenticatorAsync(
+        string email, string password, params string[] roles)
+    {
+        _adminToken = await MasterTokenAsync();
+
+        var secret = System.Security.Cryptography.RandomNumberGenerator.GetBytes(20);
+        // Keycloak keeps the secret as text and uses its bytes as the key, so
+        // the key has to be printable.
+        var key = Convert.ToHexString(secret);
+
+        using (var import = Authorized(HttpMethod.Post, $"{Authority}/admin/realms/{Realm}/partialImport"))
+        {
+            import.Content = JsonContent.Create(new
+            {
+                ifResourceExists = "FAIL",
+                users = new[]
+                {
+                    new
+                    {
+                        username = email, email, firstName = "Staff", lastName = "Member",
+                        enabled = true, emailVerified = true,
+                        credentials = new object[]
+                        {
+                            new { type = "password", value = password, temporary = false },
+                            new
+                            {
+                                type = "otp", userLabel = "test",
+                                secretData = JsonSerializer.Serialize(new { value = key }),
+                                credentialData = JsonSerializer.Serialize(new
+                                {
+                                    subType = "totp", digits = 6, period = 30,
+                                    algorithm = "HmacSHA1", counter = 0,
+                                }),
+                            },
+                        },
+                    },
+                },
+            });
+            using var imported = await _http.SendAsync(import);
+            await Expect(imported, HttpStatusCode.OK, "import a member of staff");
+        }
+
+        using var find = Authorized(
+            HttpMethod.Get, $"{Authority}/admin/realms/{Realm}/users?exact=true&email={Uri.EscapeDataString(email)}");
+        using var users = await _http.SendAsync(find);
+        users.EnsureSuccessStatusCode();
+        var id = (await users.Content.ReadFromJsonAsync<JsonElement>())[0].GetProperty("id").GetString()!;
+
+        foreach (var role in roles)
+            await GrantRealmRoleAsync(id, role);
+
+        return (id, System.Text.Encoding.ASCII.GetBytes(key));
+    }
+
+    /// <summary>The code an authenticator app would show now (RFC 6238, SHA-1, six digits).</summary>
+    public static string CurrentCode(byte[] secret)
+    {
+        var step = DateTimeOffset.UtcNow.ToUnixTimeSeconds() / 30;
+        var counter = BitConverter.GetBytes(step);
+        if (BitConverter.IsLittleEndian) Array.Reverse(counter);
+
+#pragma warning disable CA5350 // TOTP is defined over HMAC-SHA1; this is the authenticator's arithmetic, not a choice.
+        var hash = System.Security.Cryptography.HMACSHA1.HashData(secret, counter);
+#pragma warning restore CA5350
+        var offset = hash[^1] & 0x0f;
+        var binary = ((hash[offset] & 0x7f) << 24) | (hash[offset + 1] << 16)
+            | (hash[offset + 2] << 8) | hash[offset + 3];
+        return (binary % 1_000_000).ToString("D6", System.Globalization.CultureInfo.InvariantCulture);
     }
 
     /// <summary>

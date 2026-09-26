@@ -49,7 +49,7 @@ public sealed partial class IdentityService
         ArgumentNullException.ThrowIfNull(request);
 
         var pair = await _tokens
-            .PasswordGrantAsync(Normalise(request.Email), request.Password, ct)
+            .PasswordGrantAsync(Normalise(request.Email), request.Password, request.Code, ct)
             .ConfigureAwait(false);
 
         var user = await _admin.GetAsync(SubjectOf(pair.AccessToken), ct).ConfigureAwait(false);
@@ -119,7 +119,7 @@ public sealed partial class IdentityService
         }
 
         var pair = await _tokens
-            .PasswordGrantAsync(email, request.Password, ct)
+            .PasswordGrantAsync(email, request.Password, ct: ct)
             .ConfigureAwait(false);
 
         var user = await _admin.GetAsync(userId, ct).ConfigureAwait(false);

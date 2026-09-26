@@ -74,6 +74,12 @@ public sealed class IslaPayHost : WebApplicationFactory<Program>
     /// <summary>The one substitution: a test cannot read an SMS.</summary>
     public RecordingOtpSender Codes { get; } = new();
 
+    /// <summary>
+    /// Settings for this host only, applied over the fixture's. Read when the
+    /// host is first used, so they are set before the first client is made.
+    /// </summary>
+    public Dictionary<string, string> Settings { get; } = new(StringComparer.Ordinal);
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         ArgumentNullException.ThrowIfNull(builder);
@@ -116,6 +122,9 @@ public sealed class IslaPayHost : WebApplicationFactory<Program>
         builder.UseSetting("Outbox:PublishInBackground", "false");
 
         builder.UseSetting("Otp:ResendCooldown", "00:00:00");
+
+        foreach (var (key, value) in Settings)
+            builder.UseSetting(key, value);
 
         builder.ConfigureServices(services =>
         {

@@ -89,7 +89,8 @@ public static class OpenApiDocument
                     BearerFormat = "JWT",
                     Description =
                         "An access token from POST /v1/auth/login. Admin routes additionally "
-                        + "require a realm role: catalog-admin, treasury-admin or p2p-operator.",
+                        + "require a permission, granted by a staff role; "
+                        + "GET /v1/me/permissions lists the caller's.",
                 };
 
                 return Task.CompletedTask;

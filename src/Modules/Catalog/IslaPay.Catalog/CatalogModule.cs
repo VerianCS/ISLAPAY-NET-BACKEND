@@ -1,4 +1,3 @@
-using System.Text.Json;
 using IslaPay.Catalog.Contracts;
 using IslaPay.Platform;
 using IslaPay.Platform.AspNet;
@@ -29,9 +28,6 @@ namespace IslaPay.Catalog;
 /// </remarks>
 public sealed class CatalogModule : IIslaPayModule
 {
-    /// <summary>The realm role that may switch a currency or chain on and off.</summary>
-    public const string AdminRole = "catalog-admin";
-
     public string Name => "catalog";
 
     public void AddServices(IHostApplicationBuilder builder)
@@ -61,52 +57,9 @@ public sealed class CatalogModule : IIslaPayModule
 
         builder.Services.AddScoped<CatalogAdminService>();
         builder.Services.AddSingleton<IStartupTask, CatalogWarmUp>();
-
-        builder.Services.AddAuthorizationBuilder()
-            .AddPolicy(CatalogEndpoints.AdminPolicy, policy =>
-                policy.RequireAssertion(context => HasAdminRole(context.User)));
     }
 
     public void MapEndpoints(IEndpointRouteBuilder routes) => routes.MapCatalog();
-
-    /// <remarks>
-    /// Keycloak puts realm roles in a <c>realm_access</c> claim whose value is
-    /// a JSON object, and the bearer handler does not unpack it. The module
-    /// that needs the role reads it, rather than teaching the platform about
-    /// an identity provider it is not allowed to know exists.
-    /// </remarks>
-    private static bool HasAdminRole(System.Security.Claims.ClaimsPrincipal user)
-    {
-        if (user.IsInRole(AdminRole)) return true;
-
-        var realmAccess = user.FindFirst("realm_access")?.Value;
-        if (string.IsNullOrWhiteSpace(realmAccess)) return false;
-
-        try
-        {
-            using var document = JsonDocument.Parse(realmAccess);
-            if (!document.RootElement.TryGetProperty("roles", out var roles)
-                || roles.ValueKind != JsonValueKind.Array)
-            {
-                return false;
-            }
-
-            foreach (var role in roles.EnumerateArray())
-            {
-                if (role.ValueKind == JsonValueKind.String
-                    && string.Equals(role.GetString(), AdminRole, StringComparison.Ordinal))
-                {
-                    return true;
-                }
-            }
-        }
-        catch (JsonException)
-        {
-            return false;
-        }
-
-        return false;
-    }
 }
 
 /// <summary>

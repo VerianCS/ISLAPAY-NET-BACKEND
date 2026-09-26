@@ -1,5 +1,6 @@
 using IslaPay.Identity.Contracts;
 using IslaPay.Platform.AspNet;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Configuration;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
@@ -44,6 +45,10 @@ public sealed class IdentityModule : IIslaPayModule
             sp.GetRequiredService<IHttpClientFactory>(), keycloak));
 
         builder.Services.AddSingleton<IOtpStore, InMemoryOtpStore>();
+
+        // Realm roles and the second factor, read once per request for every
+        // module, so no module has to know what a Keycloak token looks like.
+        builder.Services.AddTransient<IClaimsTransformation, RealmRoleClaims>();
 
         // A sender that writes codes to the log is a development affordance
         // and nothing else.

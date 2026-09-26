@@ -71,7 +71,18 @@ print(f"  ..  realm previo: {status}")
 
 status, p = call("POST", "/admin/realms", T, body={
     "realm": REALM, "enabled": True,
-    "passwordPolicy": "length(8)",
+    # Eight characters, and not the address or the user name. Longer for
+    # everyone would cost customers more than it buys; staff carry a second
+    # factor instead.
+    "passwordPolicy": "length(8) and notUsername(undefined) and notEmail(undefined)",
+    # Five wrong passwords lock the account for a minute, doubling to fifteen.
+    # Never permanently: a permanent lock is a way for anyone who knows an
+    # address to shut its owner out.
+    "bruteForceProtected": True,
+    "failureFactor": 5,
+    "waitIncrementSeconds": 60,
+    "maxFailureWaitSeconds": 900,
+    "permanentLockout": False,
     # Sixty seconds, as in the fixture: short enough that the client's refresh
     # path is exercised rather than assumed.
     "accessTokenLifespan": 60,
@@ -138,28 +149,64 @@ s, p = call("POST",
             T, body=roles)
 must(s, {204}, "conceder los roles a la cuenta de servicio", p)
 
-# The roles the modules ask for. Created here rather than by hand so a fresh
-# realm can actually be used: an admin route whose role does not exist answers
-# 403 to everybody, including the person who just set the system up, and the
-# reason is invisible from outside.
-for role, what in (
+# The staff roles, and what each one is for. The permissions each grants are
+# decided by the API (StaffRoles in the platform), not here: this only makes
+# them exist, so a fresh realm can be used. An admin route whose role does not
+# exist answers 403 to everybody, including the person who just set the system
+# up, and the reason is invisible from outside.
+STAFF_ROLES = (
+    ("support", "consultar clientes y operaciones, sin tocar nada"),
+    ("p2p-operator", "marcar operaciones P2P pagadas, recibidas o fallidas"),
+    ("p2p-manager", "precios, métodos, límites e instrucciones del P2P"),
+    ("treasury-operator", "ver el dinero de la plataforma y proponer créditos"),
+    ("treasury-approver", "aprobar las propuestas de otra persona"),
+    ("compliance", "congelar cuentas y fijar niveles de verificación"),
     ("catalog-admin", "encender y apagar monedas y redes"),
-    ("treasury-admin", "ver el dinero de la plataforma y acreditar el float"),
-    ("p2p-operator", "trabajar la cola de trades"),
-):
+    ("security-admin", "conceder y retirar roles del personal"),
+    ("auditor", "leerlo todo, sin cambiar nada"),
+)
+for role, what in STAFF_ROLES:
     s_, p_ = call("POST", f"/admin/realms/{REALM}/roles", T,
                   body={"name": role, "description": what})
     must(s_, {201, 409}, f"crear el rol {role}", p_)
+
+# The second factor, in the token. Keycloak's direct-grant flow already asks
+# for a code from anyone who has an authenticator configured; this mapper is
+# what tells the API it was asked. Staff are required to configure one where
+# Security:RequireMultiFactor is on.
+s_, found = call("GET", f"/admin/realms/{REALM}/clients?clientId=islapay-app", T)
+must(s_, {200}, "localizar el cliente de la app", found)
+s_, p_ = call("POST", f"/admin/realms/{REALM}/clients/{found[0]['id']}/protocol-mappers/models", T,
+              body={"name": "amr", "protocol": "openid-connect",
+                    "protocolMapper": "oidc-amr-mapper",
+                    "config": {"access.token.claim": "true", "id.token.claim": "false",
+                               "introspection.token.claim": "true"}})
+must(s_, {201, 409}, "añadir amr al token de la app", p_)
+
+# The mapper writes whatever the flow's steps say they were, and a step says
+# nothing until it is given a reference. The direct-grant flow is the one the
+# API signs people in with: a password, then a code if they have set one up.
+s_, steps = call("GET", f"/admin/realms/{REALM}/authentication/flows/direct%20grant/executions", T)
+must(s_, {200}, "leer el flujo de acceso directo", steps)
+for step in steps:
+    ref = {"direct-grant-validate-password": "pwd",
+           "direct-grant-validate-otp": "otp"}.get(step.get("providerId"))
+    if ref and not step.get("authenticationConfig"):
+        s_, p_ = call("POST", f"/admin/realms/{REALM}/authentication/executions/{step['id']}/config", T,
+                      body={"alias": f"amr-{ref}", "config": {"default.reference.value": ref}})
+        must(s_, {201}, f"marcar el paso {ref} para amr", p_)
 
 print(f"""
 Realm '{REALM}' listo.
 
   Secreto del cliente de administración: {ADMIN_SECRET}
-  Roles: catalog-admin, treasury-admin, p2p-operator
+  Roles: {", ".join(r for r, _ in STAFF_ROLES)}
 
-Ninguna cuenta tiene un rol todavía. La consola de tesorería entra con el
-correo y la contraseña de una cuenta registrada por la app, y sólo muestra algo
-a quien tenga treasury-admin. Para concederlo:
+Ninguna cuenta tiene un rol todavía. La consola entra con el correo y la
+contraseña de una cuenta registrada por la app, y muestra lo que sus roles
+permiten (GET /v1/me/permissions). Quien propone un crédito no puede ser quien
+lo aprueba: treasury-operator y treasury-approver se anulan en la misma cuenta.
+Para conceder roles:
 
   {AUTH}/admin/master/console/#/{REALM}/users
 """)

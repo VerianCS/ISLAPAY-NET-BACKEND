@@ -8,6 +8,7 @@ using IslaPay.Ledger.Contracts;
 using IslaPay.Marketplace.Contracts;
 using IslaPay.Platform;
 using IslaPay.Platform.Api;
+using IslaPay.Platform.AspNet.Security;
 using IslaPay.Platform.Serialization;
 using IslaPay.TestSupport;
 using IslaPay.Treasury;
@@ -204,7 +205,7 @@ public class TreasuryTests
     private async Task<Account> TreasuryAdminAsync(IslaPayHost host)
     {
         var account = await VerifiedUserAsync(host);
-        await _fixture.Keycloak.GrantRealmRoleAsync(account.UserId, TreasuryModule.AdminRole);
+        await _fixture.Keycloak.GrantRealmRoleAsync(account.UserId, StaffRoles.TreasuryOperator);
 
         // Signed in again: roles are baked into a token when it is issued, and
         // the one from registration predates the grant.

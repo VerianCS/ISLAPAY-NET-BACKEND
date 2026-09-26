@@ -2,6 +2,7 @@ using System.Security.Claims;
 using IslaPay.P2P.Contracts;
 using IslaPay.Platform.Api;
 using IslaPay.Platform.AspNet;
+using IslaPay.Platform.AspNet.Security;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -14,14 +15,11 @@ namespace IslaPay.P2P;
 /// <remarks>
 /// Two audiences in one file because they are two halves of one flow: every
 /// trade a customer opens is a task somebody has to finish, and splitting them
-/// across files would hide that. What separates them is the authorisation
-/// policy, not the folder.
+/// across files would hide that. What separates them is the permission each
+/// route asks for, not the folder.
 /// </remarks>
 public static class P2PEndpoints
 {
-    /// <summary>The policy an operator endpoint requires. Registered by the platform.</summary>
-    public const string OperatorPolicy = "p2p-operator";
-
     public static IEndpointRouteBuilder MapP2P(this IEndpointRouteBuilder routes)
     {
         ArgumentNullException.ThrowIfNull(routes);
@@ -80,10 +78,11 @@ public static class P2PEndpoints
     {
         var group = routes.MapGroup("/v1/admin/p2p")
             .WithTags("P2P operations")
-            .RequireAuthorization(OperatorPolicy);
+            .RequireAuthorization();
 
         group.MapGet("/queue", async (int? limit, P2PService p2p, CancellationToken ct) =>
-            TypedResults.Ok(await p2p.QueueAsync(limit ?? 50, ct).ConfigureAwait(false)));
+            TypedResults.Ok(await p2p.QueueAsync(limit ?? 50, ct).ConfigureAwait(false)))
+            .RequirePermission(Permissions.P2PRead);
 
         // The queue shows what is waiting; this finds everything else — a buy
         // that expired and was paid late, or the trade a customer is calling
@@ -92,7 +91,8 @@ public static class P2PEndpoints
             string? reference, string? status, int? limit,
             P2PService p2p, CancellationToken ct) =>
             TypedResults.Ok(await p2p
-                .SearchTradesAsync(reference, status, limit ?? 50, ct).ConfigureAwait(false)));
+                .SearchTradesAsync(reference, status, limit ?? 50, ct).ConfigureAwait(false)))
+            .RequirePermission(Permissions.P2PRead);
 
         // Sending somebody money twice is the failure this key prevents, and
         // an operator on a bad connection is exactly who would retry.
@@ -102,6 +102,7 @@ public static class P2PEndpoints
             TypedResults.Ok(await p2p
                 .ConfirmPayoutAsync(SubjectOf(caller), id, request.Reference, ct)
                 .ConfigureAwait(false)))
+            .RequirePermission(Permissions.P2PSettle)
             .WithMetadata(new IdempotentAttribute());
 
         group.MapPost("/trades/{id:guid}/received", async (
@@ -110,6 +111,7 @@ public static class P2PEndpoints
             TypedResults.Ok(await p2p
                 .ConfirmReceiptAsync(SubjectOf(caller), id, request.Reference, ct)
                 .ConfigureAwait(false)))
+            .RequirePermission(Permissions.P2PSettle)
             .WithMetadata(new IdempotentAttribute());
 
         group.MapPost("/trades/{id:guid}/failed", async (
@@ -118,6 +120,7 @@ public static class P2PEndpoints
             TypedResults.Ok(await p2p
                 .FailPayoutAsync(SubjectOf(caller), id, request.Reason, ct)
                 .ConfigureAwait(false)))
+            .RequirePermission(Permissions.P2PSettle)
             .WithMetadata(new IdempotentAttribute());
 
         group.MapPut("/rates", async (
@@ -126,35 +129,37 @@ public static class P2PEndpoints
         {
             await p2p.SetRateAsync(SubjectOf(caller), update, ct).ConfigureAwait(false);
             return TypedResults.NoContent();
-        });
+        }).RequirePermission(Permissions.P2PManage);
 
         group.MapGet("/methods", async (P2PService p2p, CancellationToken ct) =>
-            TypedResults.Ok(await p2p.AdminMethodsAsync(ct).ConfigureAwait(false)));
+            TypedResults.Ok(await p2p.AdminMethodsAsync(ct).ConfigureAwait(false)))
+            .RequirePermission(Permissions.P2PRead);
 
         group.MapPost("/methods", async (
             P2PMethodCreate create, P2PService p2p, CancellationToken ct) =>
         {
             var created = await p2p.CreateMethodAsync(create, ct).ConfigureAwait(false);
             return TypedResults.Created($"/v1/admin/p2p/methods/{created.Id}", created);
-        });
+        }).RequirePermission(Permissions.P2PManage);
 
         group.MapPatch("/methods/{id}", async (
             string id, P2PMethodUpdate update, P2PService p2p, CancellationToken ct) =>
-            TypedResults.Ok(await p2p.UpdateMethodAsync(id, update, ct).ConfigureAwait(false)));
+            TypedResults.Ok(await p2p.UpdateMethodAsync(id, update, ct).ConfigureAwait(false)))
+            .RequirePermission(Permissions.P2PManage);
 
         group.MapPut("/methods/{id}/available", async (
             string id, bool value, P2PService p2p, CancellationToken ct) =>
         {
             await p2p.SetAvailabilityAsync(id, value, ct).ConfigureAwait(false);
             return TypedResults.NoContent();
-        });
+        }).RequirePermission(Permissions.P2PManage);
 
         group.MapPut("/methods/{id}/instructions", async (
             string id, P2PInstructionsUpdate update, P2PService p2p, CancellationToken ct) =>
         {
             await p2p.SetInstructionsAsync(id, update.Instructions, ct).ConfigureAwait(false);
             return TypedResults.NoContent();
-        });
+        }).RequirePermission(Permissions.P2PManage);
     }
 
     /// <summary>

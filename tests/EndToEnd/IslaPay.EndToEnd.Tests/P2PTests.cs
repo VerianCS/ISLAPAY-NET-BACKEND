@@ -12,6 +12,7 @@ using IslaPay.P2P.Contracts;
 using IslaPay.Platform;
 using IslaPay.Platform.Api;
 using IslaPay.Platform.AspNet;
+using IslaPay.Platform.AspNet.Security;
 using IslaPay.Platform.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -423,7 +424,7 @@ public class P2PTests
 
         // The catalogue lists the peso mexicano switched off. Switching it on
         // is the catalogue's decision, made by whoever holds that role.
-        await _fixture.Keycloak.GrantRealmRoleAsync(operador.UserId, "catalog-admin");
+        await _fixture.Keycloak.GrantRealmRoleAsync(operador.UserId, StaffRoles.CatalogAdmin);
         operador = await SignInAgainAsync(host, operador);
         await SetCurrencyEnabledAsync(host, operador, "MXN", true);
 
@@ -511,12 +512,23 @@ public class P2PTests
 
     private sealed record Account(string UserId, string Email, string Phone, string AccessToken);
 
-    /// <summary>An account with the operator role, and a token that carries it.</summary>
-    private async Task<Account> OperatorAsync(IslaPayHost host)
+    /// <summary>
+    /// An account that runs the desk — settles trades and sets prices — and a
+    /// token that carries both roles.
+    /// </summary>
+    /// <remarks>
+    /// Both, because most tests here set a price and then trade at it. The
+    /// split between the two is tested on its own, with one role each.
+    /// </remarks>
+    private async Task<Account> OperatorAsync(IslaPayHost host) =>
+        await StaffAsync(host, StaffRoles.P2POperator, StaffRoles.P2PManager);
+
+    private async Task<Account> StaffAsync(IslaPayHost host, params string[] roles)
     {
         var account = await VerifiedUserAsync(host);
 
-        await _fixture.Keycloak.GrantRealmRoleAsync(account.UserId, P2PModule.OperatorRole);
+        foreach (var role in roles)
+            await _fixture.Keycloak.GrantRealmRoleAsync(account.UserId, role);
 
         return await SignInAgainAsync(host, account);
     }

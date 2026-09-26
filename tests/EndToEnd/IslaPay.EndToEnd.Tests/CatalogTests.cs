@@ -9,6 +9,7 @@ using IslaPay.Identity.Contracts;
 using IslaPay.Ledger.Contracts;
 using IslaPay.Platform;
 using IslaPay.Platform.Api;
+using IslaPay.Platform.AspNet.Security;
 using IslaPay.Platform.Serialization;
 using IslaPay.TestSupport;
 using Microsoft.Extensions.DependencyInjection;
@@ -217,7 +218,7 @@ public class CatalogTests
     private async Task<Account> CatalogAdminAsync(IslaPayHost host)
     {
         var account = await VerifiedUserAsync(host);
-        await _fixture.Keycloak.GrantRealmRoleAsync(account.UserId, CatalogModule.AdminRole);
+        await _fixture.Keycloak.GrantRealmRoleAsync(account.UserId, StaffRoles.CatalogAdmin);
 
         // Signed in again: roles are baked into a token when it is issued, and
         // the one from registration predates the grant.

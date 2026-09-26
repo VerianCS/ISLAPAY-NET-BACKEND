@@ -7,7 +7,8 @@ namespace IslaPay.Identity;
 /// <summary>Exchanges credentials and refresh tokens for token pairs.</summary>
 public interface ITokenClient
 {
-    Task<TokenPair> PasswordGrantAsync(string username, string password, CancellationToken ct = default);
+    Task<TokenPair> PasswordGrantAsync(
+        string username, string password, string? oneTimeCode = null, CancellationToken ct = default);
 
     Task<TokenPair> RefreshAsync(string refreshToken, CancellationToken ct = default);
 
@@ -38,7 +39,7 @@ public sealed class KeycloakTokenClient : ITokenClient
     }
 
     public Task<TokenPair> PasswordGrantAsync(
-        string username, string password, CancellationToken ct = default)
+        string username, string password, string? oneTimeCode = null, CancellationToken ct = default)
     {
         var form = new Dictionary<string, string>
         {
@@ -52,6 +53,12 @@ public sealed class KeycloakTokenClient : ITokenClient
         };
         if (!string.IsNullOrEmpty(_options.ClientSecret))
             form["client_secret"] = _options.ClientSecret;
+
+        // Keycloak's direct-grant flow asks for this only from an account that
+        // has an authenticator set up, and names the step "otp" in the token's
+        // amr claim when it was satisfied.
+        if (!string.IsNullOrWhiteSpace(oneTimeCode))
+            form["totp"] = oneTimeCode.Trim();
 
         return PostForTokensAsync(form, isRefresh: false, ct);
     }
