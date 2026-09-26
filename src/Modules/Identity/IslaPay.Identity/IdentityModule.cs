@@ -77,6 +77,7 @@ public sealed class IdentityModule : IIslaPayModule
 
         builder.Services.AddSingleton<OtpService>();
         builder.Services.AddScoped<IdentityService>();
+        builder.Services.AddScoped<ComplianceService>();
 
         // The platform asks; this module answers for its own dependency. The
         // health endpoint never learns the word "Keycloak".
@@ -85,7 +86,11 @@ public sealed class IdentityModule : IIslaPayModule
             sp => sp.GetRequiredService<KeycloakReadiness>());
     }
 
-    public void MapEndpoints(IEndpointRouteBuilder routes) => routes.MapAuth();
+    public void MapEndpoints(IEndpointRouteBuilder routes)
+    {
+        routes.MapAuth();
+        routes.MapCompliance();
+    }
 }
 
 /// <summary>Whether the identity provider is answering.</summary>

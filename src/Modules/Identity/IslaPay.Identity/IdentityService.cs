@@ -263,7 +263,10 @@ public sealed partial class IdentityService
         Email: user.Email,
         Phone: user.Phone,
         EmailVerified: user.EmailVerified,
-        PhoneVerified: user.PhoneVerified);
+        PhoneVerified: user.PhoneVerified,
+        Level: !user.PhoneVerified ? Standing.Unverified
+            : user.IdentityVerified ? Standing.IdentityVerified : Standing.PhoneVerified,
+        Frozen: user.Frozen);
 
     private static string RequirePhone(KeycloakUser user) =>
         user.Phone is { Length: > 0 } phone

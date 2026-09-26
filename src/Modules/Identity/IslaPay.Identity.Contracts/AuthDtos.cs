@@ -44,13 +44,54 @@ public sealed record TokenPair(
 /// False until an OTP has been confirmed. Money movement is gated on this
 /// server-side; the client uses it only to decide which screen to show.
 /// </param>
+/// <param name="Level">
+/// 0 unverified, 1 phone proved, 2 identity checked by compliance. Decides the
+/// most one movement may be; see <see cref="Standing"/>.
+/// </param>
+/// <param name="Frozen">
+/// Compliance has stopped the account moving money. The client says so and
+/// points at support instead of letting each screen fail on its own.
+/// </param>
 public sealed record UserDto(
     string Id,
     string Name,
     string Email,
     string? Phone,
     bool EmailVerified,
-    bool PhoneVerified);
+    bool PhoneVerified,
+    int Level = 0,
+    bool Frozen = false);
+
+/// <summary>
+/// An account as compliance and support see it.
+/// </summary>
+/// <param name="MaxPerMovement">
+/// The most one movement may be at this level, in currency units, as a decimal
+/// string like every other amount on the wire.
+/// </param>
+public sealed record AccountStandingDto(
+    string UserId,
+    string Name,
+    string Email,
+    string? Phone,
+    bool PhoneVerified,
+    bool IdentityVerified,
+    int Level,
+    string MaxPerMovement,
+    bool Frozen,
+    string? FrozenReason,
+    DateTimeOffset? FrozenAt,
+    string? FrozenBy);
+
+/// <summary>Why an account is being frozen or unfrozen. Required, and kept.</summary>
+public sealed record StandingChangeRequest(string Reason);
+
+/// <summary>Sets an account's verification level: 1 or 2.</summary>
+/// <remarks>
+/// 0 is not settable: it means the phone is unproved, which is a fact about
+/// the phone, not a decision. Level 2 needs the phone proved first.
+/// </remarks>
+public sealed record LevelChangeRequest(int Level, string Reason);
 
 /// <summary>What <c>/v1/auth/login</c> and <c>/v1/auth/register</c> return.</summary>
 public sealed record AuthSessionResponse(TokenPair Tokens, UserDto User);

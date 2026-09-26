@@ -161,6 +161,10 @@ public sealed class KeycloakFixture : IAsyncLifetime, IDisposable
     /// both are admin-readable and admin-writable only, so a user cannot set
     /// their own <c>phoneNumberVerified</c> to true through the account API.
     /// </remarks>
+    /// <summary>As <c>KeycloakUser.ComplianceAttributes</c>, which this project cannot see.</summary>
+    private static readonly string[] ComplianceAttributes =
+        ["identityVerified", "frozen", "frozenReason", "frozenAt", "frozenBy"];
+
     private async Task ConfigureUserProfileAsync()
     {
         using var read = Authorized(HttpMethod.Get, $"{Authority}/admin/realms/{Realm}/users/profile");
@@ -200,6 +204,14 @@ public sealed class KeycloakFixture : IAsyncLifetime, IDisposable
                         adminOnly.permissions,
                     },
                 ])
+                // Compliance's marks, admin-only for the same reason.
+                .Concat(ComplianceAttributes.Select(name => (object)new
+                {
+                    name,
+                    displayName = name,
+                    multivalued = false,
+                    adminOnly.permissions,
+                }))
                 .ToArray(),
         };
 

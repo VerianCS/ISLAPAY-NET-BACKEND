@@ -8,6 +8,7 @@
   -->
   <ItemGroup>
     <ProjectReference Include="..\..\..\Platform\IslaPay.Platform.Api\IslaPay.Platform.Api.csproj" />
+    <ProjectReference Include="..\..\..\Platform\IslaPay.Platform.Money\IslaPay.Platform.Money.csproj" />
   </ItemGroup>
 
 </Project>

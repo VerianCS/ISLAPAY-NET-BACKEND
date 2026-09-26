@@ -593,19 +593,32 @@ including property tests.
 
 ---
 
-## Compliance, honestly
+## Compliance — the controls exist; the programme does not
 
-There is none. No KYC, no sanctions screening, no transaction limits, no
-monitoring, no suspicious-activity workflow, and no originator or beneficiary
-data on a transfer (FATF R.16). `TransferRequest` carries an amount, a
-destination and a note.
+**What there is now:**
 
-The one thing a supervisor would like is the ledger: append-only, gapless,
-fully audited.
+- **Freeze.** `POST /v1/admin/compliance/accounts/{id}/freeze` and `/unfreeze`
+  (`compliance.act`, reason required). The mark lives on the account in
+  Keycloak beside the phone's, and Wallet, P2P, Marketplace and Custody read it
+  on every movement through `IUserDirectory` — so it applies on the next
+  request, not when the token expires. A frozen person can still sign in and
+  see their money; `UserDto.frozen` tells the app. Deposits to an address the
+  account already has are still credited (a chain cannot be refused); no new
+  address is issued.
+- **Levels.** 0 phone unproved, 1 phone proved, 2 identity checked by
+  compliance (`PUT /v1/admin/compliance/accounts/{id}/level`). One movement may
+  be at most 1,000 at level 1 and 25,000 at level 2, in units of the currency
+  (every holdable currency is dollar-denominated today). Refused with
+  `limit_exceeded` and `meta.limit`, `meta.currency`, `meta.level`. The rule is
+  one function, `Standing.Check`, in Identity's contracts.
+- **Lookup** by e-mail or id for support (`support.read`).
+- Every change carries its reason into the audit log.
 
-This is not on the roadmap below because it is not a coding decision first —
-see the sanctions discussion; the company's structure decides the architecture,
-not the other way round.
+**What there is not:** daily or monthly totals (the ledger would have to sum a
+person's outflows), sanctions screening, transaction monitoring, a
+suspicious-activity workflow, document upload, and originator or beneficiary
+data on a transfer (FATF R.16). Those are not a coding decision first — the
+company's structure decides the architecture, not the other way round.
 
 ---
 

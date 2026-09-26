@@ -277,6 +277,16 @@ public sealed class P2PService
 
         RequireWithinLimits(method, priced.Local);
 
+        // Frozen, or more than this level allows at once — after the rail's own
+        // limits, which are about the desk and answer first. Both sides count:
+        // a buy brings money in, and a level is about how much moves either way.
+        if (Standing.Check(user, request.Amount) is { } refusal)
+        {
+            var failure = new P2PException(refusal.Code, refusal.Status, refusal.Message);
+            foreach (var (key, value) in refusal.Facts) failure.Facts[key] = value;
+            throw failure;
+        }
+
         if (await FundShortfallAsync(method, request.Side, priced, cancellationToken)
             .ConfigureAwait(false) is { } short_)
         {

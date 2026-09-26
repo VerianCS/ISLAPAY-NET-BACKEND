@@ -24,6 +24,20 @@ public sealed record KeycloakUser(
     public const string PhoneAttribute = "phoneNumber";
     public const string PhoneVerifiedAttribute = "phoneNumberVerified";
 
+    // Compliance's marks. Admin-only in the realm's user profile, like the
+    // phone's, so a person cannot unfreeze or verify themselves through the
+    // account API.
+    public const string IdentityVerifiedAttribute = "identityVerified";
+    public const string FrozenAttribute = "frozen";
+    public const string FrozenReasonAttribute = "frozenReason";
+    public const string FrozenAtAttribute = "frozenAt";
+    public const string FrozenByAttribute = "frozenBy";
+
+    public static readonly IReadOnlyList<string> ComplianceAttributes =
+    [
+        IdentityVerifiedAttribute, FrozenAttribute, FrozenReasonAttribute, FrozenAtAttribute, FrozenByAttribute,
+    ];
+
     public string? Phone => Attribute(PhoneAttribute);
 
     /// <summary>
@@ -33,13 +47,28 @@ public sealed record KeycloakUser(
     public bool PhoneVerified =>
         string.Equals(Attribute(PhoneVerifiedAttribute), "true", StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>Absent counts as not checked, for the same reason.</summary>
+    public bool IdentityVerified =>
+        string.Equals(Attribute(IdentityVerifiedAttribute), "true", StringComparison.OrdinalIgnoreCase);
+
+    public bool Frozen =>
+        string.Equals(Attribute(FrozenAttribute), "true", StringComparison.OrdinalIgnoreCase);
+
+    public string? FrozenReason => Attribute(FrozenReasonAttribute);
+
+    public DateTimeOffset? FrozenAt =>
+        DateTimeOffset.TryParse(Attribute(FrozenAtAttribute), System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.AssumeUniversal, out var at) ? at : null;
+
+    public string? FrozenBy => Attribute(FrozenByAttribute);
+
     public string DisplayName =>
         string.Join(' ', new[] { FirstName, LastName }.Where(p => !string.IsNullOrWhiteSpace(p)))
             is { Length: > 0 } joined
             ? joined
             : Username;
 
-    private string? Attribute(string name) =>
+    public string? Attribute(string name) =>
         Attributes.TryGetValue(name, out var values) && values.Count > 0 ? values[0] : null;
 }
 
@@ -59,6 +88,10 @@ public interface IAdminClient
     Task SetPasswordAsync(string userId, string password, CancellationToken ct = default);
 
     Task SetPhoneVerifiedAsync(string userId, bool verified, CancellationToken ct = default);
+
+    /// <summary>Writes attributes; a null value removes one.</summary>
+    Task SetAttributesAsync(
+        string userId, IReadOnlyDictionary<string, string?> values, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -236,8 +269,20 @@ public sealed class KeycloakAdminClient : IAdminClient
         await EnsureSuccessAsync(response, "set a password", ct).ConfigureAwait(false);
     }
 
-    public async Task SetPhoneVerifiedAsync(string userId, bool verified, CancellationToken ct = default)
+    public Task SetPhoneVerifiedAsync(string userId, bool verified, CancellationToken ct = default) =>
+        SetAttributesAsync(
+            userId,
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [KeycloakUser.PhoneVerifiedAttribute] = verified ? "true" : "false",
+            },
+            ct);
+
+    public async Task SetAttributesAsync(
+        string userId, IReadOnlyDictionary<string, string?> values, CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(values);
+
         // Read first, then write the whole representation back.
         //
         // A PUT to /users is validated against the realm's declarative user
@@ -252,7 +297,11 @@ public sealed class KeycloakAdminClient : IAdminClient
             pair => pair.Key,
             pair => pair.Value.ToArray(),
             StringComparer.Ordinal);
-        attributes[KeycloakUser.PhoneVerifiedAttribute] = [verified ? "true" : "false"];
+        foreach (var (name, value) in values)
+        {
+            if (value is null) attributes.Remove(name);
+            else attributes[name] = [value];
+        }
 
         using var request = await AuthorizedAsync(
             HttpMethod.Put, $"{_options.AdminBase}/users/{Uri.EscapeDataString(userId)}", ct)

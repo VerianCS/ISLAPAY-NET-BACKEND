@@ -248,6 +248,13 @@ public sealed class MarketplaceService
 
     // ----------------------------------------------------------------- orders
 
+    private static MarketplaceException Refused(StandingRefusal refusal)
+    {
+        var failure = new MarketplaceException(refusal.Code, refusal.Status, refusal.Message);
+        foreach (var (key, value) in refusal.Facts) failure.Facts[key] = value;
+        return failure;
+    }
+
     /// <summary>
     /// Locks the price of a listing in escrow and issues the code that
     /// releases it.
@@ -273,8 +280,18 @@ public sealed class MarketplaceService
                 "The account must prove its phone number before money can move.");
         }
 
+        if (Standing.Check(buyer) is { } frozen) throw Refused(frozen);
+
         var order = await ClaimListingAsync(buyerId, buyer.Name, listingId, cancellationToken)
             .ConfigureAwait(false);
+
+        // The price is only known once the listing is claimed; a refusal here
+        // hands the listing back before anything has moved.
+        if (Standing.Check(buyer, order.Amount) is { } tooMuch)
+        {
+            await AbandonQuietlyAsync(order, cancellationToken).ConfigureAwait(false);
+            throw Refused(tooMuch);
+        }
 
         try
         {

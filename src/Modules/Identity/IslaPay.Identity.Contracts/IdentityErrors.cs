@@ -75,4 +75,10 @@ public static class IdentityErrors
     /// dependency failure, not the caller's fault, and safe to retry.
     /// </summary>
     public const string IdentityUnavailable = "identity_unavailable";
+
+    /// <summary>No account has that id or address. Staff routes only.</summary>
+    public const string AccountNotFound = "account_not_found";
+
+    /// <summary>A freeze, unfreeze or level change without a reason, or a level that is not 1 or 2.</summary>
+    public const string InvalidStandingChange = "invalid_standing_change";
 }

@@ -116,6 +116,15 @@ public sealed class WalletService
                 "The account must prove its phone number before money can move.");
         }
 
+        // Frozen, or more than this level allows at once: compliance's rule,
+        // the same in every module that moves a customer's money.
+        if (Standing.Check(sender, request.Amount) is { } refusal)
+        {
+            var failure = new WalletException(refusal.Code, refusal.Status, refusal.Message);
+            foreach (var (key, value) in refusal.Facts) failure.Facts[key] = value;
+            throw failure;
+        }
+
         var recipient = await _directory.FindByEmailAsync(destination, cancellationToken)
             .ConfigureAwait(false);
 

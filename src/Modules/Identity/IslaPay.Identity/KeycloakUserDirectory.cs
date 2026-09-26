@@ -48,5 +48,5 @@ internal sealed class KeycloakUserDirectory : IUserDirectory
     }
 
     private static DirectoryUser Describe(KeycloakUser user) =>
-        new(user.Id, user.Email, user.DisplayName, user.PhoneVerified);
+        new(user.Id, user.Email, user.DisplayName, user.PhoneVerified, user.IdentityVerified, user.Frozen);
 }

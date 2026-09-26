@@ -602,6 +602,14 @@ public sealed class CustodyService
     {
         var user = await _directory.FindByIdAsync(userId, cancellationToken).ConfigureAwait(false);
         if (user is null || !user.PhoneVerified) throw CustodyException.PhoneNotVerified();
+
+        // A frozen account is given no new place to send money to. What
+        // arrives at an address it already has is still credited: a chain
+        // cannot be told no, and the freeze is on moving money, not on owning it.
+        if (Standing.Check(user) is { } refusal)
+        {
+            throw new CustodyException(refusal.Code, refusal.Status, refusal.Message) { Meta = refusal.Facts };
+        }
     }
 
     private static DepositAddressDto Project(DepositAddress row, CurrencyOnNetwork network) =>

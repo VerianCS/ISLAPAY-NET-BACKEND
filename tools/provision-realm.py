@@ -97,6 +97,10 @@ admin_only = {"permissions": {"view": ["admin"], "edit": ["admin"]}}
 profile["attributes"] = profile.get("attributes", []) + [
     {"name": "phoneNumber", "displayName": "Phone", "multivalued": False, **admin_only},
     {"name": "phoneNumberVerified", "displayName": "Phone verified", "multivalued": False, **admin_only},
+] + [
+    # Compliance's marks: identity checked, and a freeze with its reason.
+    {"name": n, "displayName": n, "multivalued": False, **admin_only}
+    for n in ("identityVerified", "frozen", "frozenReason", "frozenAt", "frozenBy")
 ]
 status, p = call("PUT", f"/admin/realms/{REALM}/users/profile", T, body=profile)
 must(status, {200}, "declarar los atributos de teléfono", p)

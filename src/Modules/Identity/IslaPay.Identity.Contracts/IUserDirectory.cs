@@ -14,11 +14,26 @@ namespace IslaPay.Identity.Contracts;
 /// this, so it is read here rather than trusted from a token claim: a token
 /// issued before verification keeps saying false until it expires.
 /// </param>
+/// <param name="IdentityVerified">
+/// Compliance has seen a document and matched it to the person. Raises the
+/// account to level 2.
+/// </param>
+/// <param name="Frozen">
+/// Compliance has stopped this account moving money. Read on every movement,
+/// like the phone, so a freeze takes effect on the next request rather than
+/// when the person's token expires.
+/// </param>
 public sealed record DirectoryUser(
     string UserId,
     string Email,
     string Name,
-    bool PhoneVerified);
+    bool PhoneVerified,
+    bool IdentityVerified = false,
+    bool Frozen = false)
+{
+    /// <summary>0 unverified, 1 phone proved, 2 identity checked.</summary>
+    public int Level => !PhoneVerified ? 0 : IdentityVerified ? 2 : 1;
+}
 
 /// <summary>
 /// Looking a user up, for modules that need to name one.
