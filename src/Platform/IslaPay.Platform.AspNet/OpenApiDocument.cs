@@ -189,29 +189,25 @@ public static class OpenApiDocument
                 // `unknown`, the same trap as the timestamps above.
                 var type = Nullable.GetUnderlyingType(context.JsonTypeInfo.Type)
                     ?? context.JsonTypeInfo.Type;
+
+                // A list of amounts: the items are money too, and left alone
+                // they reach a client as `unknown[]`.
+                if (type != typeof(string) && type.GetInterfaces().Append(type).Any(i =>
+                        i.IsGenericType
+                        && i.GetGenericTypeDefinition() == typeof(IEnumerable<>)
+                        && i.GetGenericArguments()[0] == typeof(Money)))
+                {
+                    schema.Type = JsonSchemaType.Array;
+                    schema.Items = MoneySchema();
+                    return Task.CompletedTask;
+                }
+
                 if (type != typeof(Money)) return Task.CompletedTask;
 
-                schema.Type = JsonSchemaType.Object;
-                schema.Properties = new Dictionary<string, IOpenApiSchema>(StringComparer.Ordinal)
-                {
-                    ["amount"] = new OpenApiSchema
-                    {
-                        Type = JsonSchemaType.String,
-                        Description = "A decimal string in the currency's own scale: \"100.50\".",
-                        Examples = [JsonValue.Create("100.50")],
-                    },
-                    ["currency"] = new OpenApiSchema
-                    {
-                        Type = JsonSchemaType.String,
-                        Description = "A code from GET /v1/catalog/currencies.",
-                        Examples = [JsonValue.Create("EISLA")],
-                    },
-                };
-                schema.Required = new HashSet<string>(StringComparer.Ordinal)
-                {
-                    "amount",
-                    "currency",
-                };
+                var money = MoneySchema();
+                schema.Type = money.Type;
+                schema.Properties = money.Properties;
+                schema.Required = money.Required;
 
                 return Task.CompletedTask;
             });
@@ -288,4 +284,26 @@ public static class OpenApiDocument
             app.MapOpenApi(options.Route);
         }
     }
+
+    /// <summary>Money as it travels: a decimal string and a currency code.</summary>
+    private static OpenApiSchema MoneySchema() => new()
+    {
+        Type = JsonSchemaType.Object,
+        Properties = new Dictionary<string, IOpenApiSchema>(StringComparer.Ordinal)
+        {
+            ["amount"] = new OpenApiSchema
+            {
+                Type = JsonSchemaType.String,
+                Description = "A decimal string in the currency's own scale: \"100.50\".",
+                Examples = [JsonValue.Create("100.50")],
+            },
+            ["currency"] = new OpenApiSchema
+            {
+                Type = JsonSchemaType.String,
+                Description = "A code from GET /v1/catalog/currencies.",
+                Examples = [JsonValue.Create("EISLA")],
+            },
+        },
+        Required = new HashSet<string>(StringComparer.Ordinal) { "amount", "currency" },
+    };
 }
